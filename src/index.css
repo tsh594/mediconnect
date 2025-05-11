@@ -1,0 +1,51 @@
+/* index.css */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+@import './animations.css';
+@import './badges.css';
+@import './base.css';
+@import './buttons.css';
+@import './footer.css';
+@import './grid.css';
+@import './hero.css';
+@import './logo.css';
+@import './navbar.css';
+@import './notification-bubble.css';
+@import './search-bar.css';
+@import './variables.css';
+@import './specialty.css';
+@import './testimonial.css';
+@import './Learning.css';
+@import './Appointments.css';
+
+
+
+
+
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Poppins', sans-serif;
+}
+
+.btn {
+  position: relative; /* Add this to all button elements */
+}
+
+.nav-links {
+  position: relative; /* Ensure positioning context */
+}
+
+
+
+
+
+
+
+
+
+
+
+
+

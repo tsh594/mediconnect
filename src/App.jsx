@@ -1,0 +1,756 @@
+import { useState, useEffect } from 'react';
+import { 
+  FaStethoscope, FaHeartbeat, FaBrain, FaBaby, FaBone, FaClinicMedical,
+  FaUserMd, FaXRay, FaBookMedical, FaFirstAid, FaProcedures, FaMicroscope,
+  FaEye, FaAllergies, FaSyringe, FaSearch, FaBookOpen, FaComments, FaStar,
+  FaChevronDown, FaChevronUp 
+} from 'react-icons/fa';
+import { FaCut, FaUserAlt, FaRegUser, FaHeadSideCough } from 'react-icons/fa';
+import { GiKidneys, GiLungs, GiSpiderWeb, GiStomach } from 'react-icons/gi';
+import { MdPsychology, MdEmergency, MdForum } from 'react-icons/md';
+import './specialty.css';
+import './index.css';
+
+function App() {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isBottom, setIsBottom] = useState(false);
+  const [activeSpecialty, setActiveSpecialty] = useState(null);
+  const [bookingStep, setBookingStep] = useState(1);
+  const [userRatings, setUserRatings] = useState({});
+  const [hoveredAvatar, setHoveredAvatar] = useState(null);
+  const [showAll, setShowAll] = useState(false);
+  const [visibleTestimonials, setVisibleTestimonials] = useState(3);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const bottom = Math.ceil(window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 50;
+      setIsBottom(bottom);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('show');
+          if(entry.target.classList.contains('stagger')) {
+            entry.target.style.animationDelay = `${entry.target.dataset.delay * 0.2}s`;
+          }
+        }
+      });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.hidden').forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
+
+  const handleEmergencyClick = () => {
+    navigator.geolocation.getCurrentPosition((position) => {
+      alert(`Emergency alert sent! Location: ${position.coords.latitude}, ${position.coords.longitude}`);
+    });
+  };
+
+  const handleRating = (author, rating) => {
+    setUserRatings(prev => ({
+      ...prev,
+      [author]: rating
+    }));
+  };
+
+const SpecialtyCard = ({ specialty }) => {
+  return (
+    <div className="specialty-card" 
+        style={{ 
+          '--border-color': specialty.color,
+          '--button-color': specialty.color
+        }}>
+      <div className="specialty-content">
+        <div className="specialty-icon" style={{ color: specialty.color }}>
+          {specialty.icon}
+        </div>
+        <h3>{specialty.name}</h3>
+        <p className="specialty-description">{specialty.description}</p>
+        <div className="specialty-cases">
+          {specialty.cases.map((caseStudy, index) => (
+            <span key={index} className="case-tag">{caseStudy}</span>
+          ))}
+        </div>
+      </div>
+      <div className="specialty-btn-container">
+        <button className="specialty-btn">
+          Book Consultation
+        </button>
+      </div>
+    </div>
+  );
+};
+
+  return (
+    <div className="app">
+      <a href="/" className="logo-container hidden">
+        <img src="/logo-w1.png" alt="MediConnect" className="logo-img animate-pulse" />
+        <span className="logo-text gradient-text">MediConnect</span>
+      </a>
+
+<nav className={`navbar ${isMenuOpen ? 'menu-open' : ''}`}>
+  <div 
+    className={`nav-content ${isMenuOpen ? 'visible' : ''}`}
+  >
+    <input 
+      type="text" 
+      className="search-bar glassmorphism-input" 
+      placeholder="Search services..." 
+    />
+    <div className={`nav-links ${isMenuOpen ? 'active' : ''}`}>
+      {['Learning', 'Appointments', 'Emergencies'].map((link) => (
+        <a 
+          key={link}
+          href={`/${link.toLowerCase()}`} 
+          className="nav-link hover:text-lavender-dark"
+        >
+          {link}
+        </a>
+      ))}
+      <a href="/login" className="btn btn-sage">
+        Professional Login <span className="notification-bubble">2</span>
+      </a>
+    </div>
+  </div>
+
+  <div 
+    className="hamburger-container"
+    onClick={() => setIsMenuOpen(!isMenuOpen)}
+    aria-label="Toggle navigation menu"
+  >
+    <div className="hamburger">
+      {[1, 2, 3].map((i) => (
+        <div 
+          key={i}
+          className={`hamburger-line ${isMenuOpen ? 'open' : ''}`}
+        />
+      ))}
+    </div>
+    <div className={`hamburger-pulse ${isMenuOpen ? 'animate-ripple' : ''}`} />
+  </div>
+</nav>
+
+      <main>
+        <div className="massive-logo-wrapper">
+          <img 
+            src="/logo-w1.png" 
+            alt="MediConnect" 
+            className="massive-logo-img animate-float"
+          />
+        </div>
+
+        <section className="hero">
+          <div className="hero-content hidden">
+            <div className="hero-text">
+              <h1 className="text-gradient animate-text-reveal">
+                Medical Collaboration & Emergency Platform
+              </h1>
+              <div className="cta-buttons">
+                <button 
+                  className="btn btn-lavender hover:scale-105"
+                  onClick={handleEmergencyClick}
+                >
+                  Emergency Alert
+                </button>
+                <button className="btn btn-sage hover:scale-105">
+                  Book Appointment
+                </button>
+              </div>
+            </div>
+
+            <div className="hero-image hidden">
+              <div className="gradient-blob animate-blob" />
+              <img 
+                src="/collaborate.jpg" 
+                alt="Healthcare professionals collaborating" 
+                className="floating transition-transform duration-300 hover:scale-105"
+                style={{ borderRadius: '20px' }}
+              />
+            </div>
+
+            <p className="text-sage-800 description-text">
+              Connect with medical experts, access learning resources, and get immediate help when needed.
+            </p>
+
+            <div className="user-roles">
+              <div className="role-container doctor-container hidden" data-delay="0">
+                <span className="role-badge doctor-badge">Doctors</span>
+                <p className="role-description">Teach and consult</p>
+              </div>
+              
+              <div className="role-container student-container hidden" data-delay="0.2">
+                <span className="role-badge student-badge">Students</span>
+                <p className="role-description">Learn and discuss</p>
+              </div>
+
+              <div className="role-container resident-container hidden" data-delay="0.4">
+                <span className="role-badge resident-badge">Residents</span>
+                <p className="role-description">Train and mentor</p>
+              </div>
+
+              <div className="role-container patient-container hidden" data-delay="0.6">
+                <span className="role-badge patient-badge">Patients</span>
+                <p className="role-description">Get care and support</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="features hidden">
+          <div className="feature-buttons">
+            <button className="feature-btn emergency-btn">
+              <div className="btn-content">
+                <span className="audience-tag">For Everyone</span>
+                <h3 className="btn-title">Code Blue Connect</h3>
+                <p className="btn-description">
+                  Instant geolocated SOS broadcasting to verified medical responders 
+                  within a 5-mile radius
+                </p>
+                <span className="btn-action-b">
+                  <MdEmergency className="icon" />
+                  Trigger Alert
+                </span>
+              </div>
+            </button>
+
+            <button className="feature-btn specialist-btn">
+              <div className="btn-content">
+                <span className="audience-tag">For Patients</span>
+                <h3 className="btn-title">Precision Consult Match</h3>
+                <p className="btn-description">
+                  Algorithm-driven specialist pairing with board-certified professionals
+                </p>
+                <span className="btn-action">
+                  <FaSearch className="icon" />
+                  <FaStethoscope className="icon" />
+                  Find Doctors
+                </span>
+              </div>
+            </button>
+
+            <button className="feature-btn learning-btn">
+              <div className="btn-content">
+                <span className="audience-tag">Students/Residents</span>
+                <h3 className="btn-title">Clinical Nexus Academy</h3>
+                <p className="btn-description">
+                  Immersive case simulations and peer-to-peer grand rounds
+                </p>
+                <p className="btn-description">Access cases, quizzes, and mentor support</p>
+                <span className="btn-action-a">
+                  <FaBookOpen className="icon" />
+                  Start Learning
+                </span>
+              </div>
+            </button>
+
+            <button className="feature-btn discussion-btn">
+              <div className="btn-content">
+                <span className="audience-tag">For Doctors</span>
+                <h3 className="btn-title">Diagnostic Think Tank</h3>
+                <p className="btn-description">
+                  Crowd-sourced differential diagnoses with AI-powered pattern recognition
+                </p>
+                <span className="btn-action-c">
+                  <MdForum className="icon" />
+                  Join Discussions
+                </span>
+              </div>
+            </button>
+          </div>
+        </section>
+
+        <section className="medical-specialties">
+          <div className="container">
+            <h2 className="section-title">
+              <span className="highlight">Multidisciplinary</span> Expertise Network
+            </h2>
+            <p className="section-subtitle">
+              27 specialized fields | 500+ verified practitioners | Avg. 8min response time
+            </p>
+            <div className="specialties-grid">
+              {medicalSpecialties.map((specialty, i) => (
+                <SpecialtyCard 
+                  key={specialty.name} 
+                  specialty={specialty} 
+                />
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="learning hidden">
+          <h2 className="text-lavender-dark">
+            Medical Learning Hub & Clinical Cognition Engine
+          </h2>
+          <p className="section-description">
+            Transform theoretical knowledge into practical mastery through our  
+            <span className="highlight">3D anatomy visualizer</span>, 
+            <span className="highlight">live code review simulations</span>, and  
+            <span className="highlight">resident mentorship pipelines</span>.
+          </p>
+          <div className="specialty-grid">
+            {medicalSpecialties.map((specialty, i) => (
+              <div 
+                key={specialty.name}
+                className="learning-card hidden stagger"
+                data-delay={i * 0.1}
+                onClick={() => setActiveSpecialty(specialty)}
+              >
+                <div className="learning-icon" style={{ color: specialty.color }}>
+                  {specialty.icon}
+                </div>
+                <h3>{specialty.name}</h3>
+                <div className="learning-resources">
+                  {specialty.cases.slice(0, 2).map((resource, index) => (
+                    <span key={index} className="resource-tag">
+                      {resource}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="appointments hidden">
+          <h2 className="text-sage-800">
+            Precision Care Coordination
+          </h2>
+          <p className="section-description">
+            Our <span className="highlight">Smart Match Algorithm</span> analyzes  
+            12 clinical parameters to connect patients with ideal specialists,  
+            reducing diagnostic odysseys by 68% (2024 clinical trial data).
+          </p>
+          <h2 className="text-sage-800">Book a Specialist</h2>
+          <div className="appointment-form">
+            <select 
+              className="specialty-select"
+              onChange={(e) => setActiveSpecialty(medicalSpecialties.find(s => s.name === e.target.value))}
+            >
+              <option value="">Select Specialty</option>
+              {medicalSpecialties.map((specialty) => (
+                <option key={specialty.name} value={specialty.name}>
+                  {specialty.name}
+                </option>
+              ))}
+            </select>
+            {activeSpecialty && (
+              <div className="booking-details">
+                <div className="specialty-header">
+                  <div className="specialty-icon" style={{ color: activeSpecialty.color }}>
+                    {activeSpecialty.icon}
+                  </div>
+                  <h3>{activeSpecialty.name} Consultation</h3>
+                </div>
+                <div className="consultation-info">
+                  <p><strong>Typical Cases:</strong> {activeSpecialty.cases.slice(0, 3).join(', ')}</p>
+                  <p><strong>Average Response Time:</strong> 2-4 hours</p>
+                  <p><strong>Consultation Fee:</strong> $120-250</p>
+                </div>
+                <button className="btn btn-lavender">
+                  Proceed to Payment
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+
+<section className="testimonials hidden">
+  <h2>Voices of Trust</h2>
+  <p className="section-subtitle hidden">
+    Join 3,000+ medical professionals revolutionizing care
+  </p>
+
+  <div className="testimonial-carousel">
+    {testimonials.map((testimonial, i) => {
+      const userRating = userRatings[testimonial.author] || testimonial.rating;
+      
+      return (
+        <div 
+          key={i}
+          className="testimonial-card hidden stagger"
+          data-delay={i * 0.2}
+        >
+          <div className="testimonial-content">
+            <div 
+              className={`testimonial-avatar ${hoveredAvatar === testimonial.author ? 'avatar-hover' : ''}`}
+              onMouseEnter={() => setHoveredAvatar(testimonial.author)}
+              onMouseLeave={() => setHoveredAvatar(null)}
+            >
+              <img 
+                src={testimonial.avatar} 
+                alt={testimonial.author}
+                className="avatar-img"
+              />
+              {hoveredAvatar === testimonial.author && (
+                <div className="avatar-tooltip">
+                  {testimonial.author}
+                </div>
+              )}
+            </div>
+            
+            <div className="rating-container">
+              <div className="user-rating">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <FaStar
+                    key={star}
+                    className={`rating-star ${star <= userRating ? 'active' : ''}`}
+                    onClick={() => handleRating(testimonial.author, star)}
+                  />
+                ))}
+              </div>
+              <span className="rating-text">
+                {userRating}.0/5.0
+              </span>
+            </div>
+
+            <p className="testimonial-quote">"{testimonial.quote}"</p>
+            
+            <div className="author">
+              <span className={testimonial.badgeClass}>
+                {testimonial.author}
+              </span>
+              <span className="author-role">{testimonial.role}</span>
+            </div>
+          </div>
+
+          <div className="testimonial-footer">
+            <button className="btn btn-lavender w-full hover:scale-[1.02] transition-transform">
+              <FaComments className="mr-2" />
+              View Full Story
+            </button>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+
+  <div className="text-center mt-8">
+    <button className="btn btn-lavender px-8 py-3 rounded-lg hover:bg-opacity-90 
+      transition-all duration-300 transform hover:-translate-y-0.5 shadow-lg
+      bg-gradient-to-r from-purple-600 to-blue-500 text-white">
+      <FaComments className="mr-2" />
+      Share Your Story
+    </button>
+  </div>
+</section>
+      </main>
+
+      <footer className="hidden">
+        <div className="footer-content">
+          <div className="footer-brand">
+            <img 
+              src="/logo.png" 
+              alt="MediConnect" 
+              className="footer-logo animate-pulse"
+            />
+          </div>
+          
+          <div className="footer-links">
+            <div className="link-group">
+              <h4>Services</h4>
+              <a href="/learning">Learning Hub</a>
+              <a href="/appointments">Specialist Booking</a>
+              <a href="/emergency">Emergency Help</a>
+            </div>
+            <div className="link-group">
+              <h4>Community</h4>
+              <a href="/forums">Discussion Forums</a>
+              <a href="/mentorship">Mentorship</a>
+              <a href="/cases">Case Library</a>
+            </div>
+            <div className="link-group">
+              <h4>Legal</h4>
+              <a href="/privacy">Privacy Policy</a>
+              <a href="/terms">Terms of Service</a>
+              <a href="/compliance">HIPAA Compliance</a>
+            </div>
+          </div>
+        </div>
+        
+        <div className="footer-bottom">
+          <p>© 2025 MEDICONNECT. All rights reserved.</p>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+// Medical Specialties Data with Professional Icons
+const medicalSpecialties = [
+  { 
+    name: 'General Medicine', 
+    icon: <FaUserMd />,
+    color: '#3B82F6',
+    description: 'Comprehensive adult health management',
+    cases: ['Chronic disease care', 'Preventive screenings', 'Health maintenance']
+  },
+  { 
+    name: 'Radiology', 
+    icon: <FaXRay />,
+    color: '#475569',
+    description: 'Medical imaging and diagnostic interpretation',
+    cases: ['MRI analysis', 'CT scan review', 'Ultrasound diagnostics']
+  },
+  { 
+    name: 'Cardiology', 
+    icon: <FaHeartbeat />,
+    color: '#EF4444',
+    description: 'Heart and circulatory system disorders',
+    cases: ['Arrhythmia management', 'Heart failure care', 'Angina treatment']
+  },
+  { 
+    name: 'Neurology', 
+    icon: <FaBrain />,
+    color: '#8B5CF6',
+    description: 'Nervous system disorders treatment',
+    cases: ['Epilepsy management', 'Stroke rehabilitation', 'MS care']
+  },
+  { 
+    name: 'Oncology', 
+    icon: <FaClinicMedical />,
+    color: '#9333EA',
+    description: 'Cancer diagnosis and treatment',
+    cases: ['Chemotherapy planning', 'Radiation therapy', 'Tumor boards']
+  },
+  { 
+    name: 'Pediatrics', 
+    icon: <FaBaby />,
+    color: '#F59E0B',
+    description: 'Child health and development',
+    cases: ['Vaccination schedules', 'Growth monitoring', 'Adolescent care']
+  },
+  { 
+    name: 'Orthopedics', 
+    icon: <FaBone />,
+    color: '#6B7280',
+    description: 'Musculoskeletal system care',
+    cases: ['Fracture repair', 'Joint replacement', 'Sports injuries']
+  },
+  { 
+    name: 'Dermatology', 
+    icon: <FaUserAlt />,
+    color: '#EC4899',
+    description: 'Skin, hair and nail conditions',
+    cases: ['Psoriasis treatment', 'Acne therapy', 'Skin cancer screening']
+  },
+  { 
+    name: 'Gastroenterology', 
+    icon: <GiStomach />,
+    color: '#10B981',
+    description: 'Digestive system disorders',
+    cases: ['Colonoscopy screening', 'IBD management', 'Liver disease care']
+  },
+  { 
+    name: 'Endocrinology', 
+    icon: <FaSyringe />,
+    color: '#F59E0B',
+    description: 'Hormonal and metabolic disorders',
+    cases: ['Diabetes management', 'Thyroid disorders', 'Osteoporosis care']
+  },
+  { 
+    name: 'Pulmonology', 
+    icon: <GiLungs />,
+    color: '#3B82F6',
+    description: 'Respiratory system health',
+    cases: ['Asthma control', 'COPD management', 'Sleep apnea treatment']
+  },
+  { 
+    name: 'Nephrology', 
+    icon: <GiKidneys />,
+    color: '#10B981',
+    description: 'Kidney disease management',
+    cases: ['Dialysis planning', 'Hypertension care', 'Transplant coordination']
+  },
+  { 
+    name: 'Hematology', 
+    icon: <FaMicroscope />,
+    color: '#DC2626',
+    description: 'Blood disorders treatment',
+    cases: ['Anemia management', 'Leukemia care', 'Coagulation disorders']
+  },
+  { 
+    name: 'Rheumatology', 
+    icon: <FaProcedures />,
+    color: '#8B5CF6',
+    description: 'Autoimmune and joint diseases',
+    cases: ['Arthritis management', 'Lupus care', 'Osteoporosis treatment']
+  },
+  { 
+    name: 'Infectious Diseases', 
+    icon: <FaAllergies />,
+    color: '#9333EA',
+    description: 'Complex infection management',
+    cases: ['Antibiotic therapy', 'HIV care', 'Travel medicine']
+  },
+  { 
+    name: 'Emergency Medicine', 
+    icon: <MdEmergency />,
+    color: '#DC2626',
+    description: 'Acute care and trauma response',
+    cases: ['Trauma stabilization', 'Cardiac arrest care', 'Toxicology']
+  },
+  { 
+    name: 'Family Medicine', 
+    icon: <FaUserMd />,
+    color: '#3B82F6',
+    description: 'Comprehensive family health care',
+    cases: ['Preventive care', 'Chronic disease management', 'Health screenings']
+  },
+  { 
+    name: 'Psychiatry', 
+    icon: <MdPsychology />,
+    color: '#10B981',
+    description: 'Mental health and behavioral care',
+    cases: ['Depression treatment', 'Anxiety management', 'Behavioral therapy']
+  },
+  { 
+    name: 'Obstetrics/Gynecology', 
+    icon: <FaProcedures />,
+    color: '#EC4899',
+    description: 'Women\'s reproductive health',
+    cases: ['Prenatal care', 'Menopause management', 'Gynecologic surgery']
+  },
+  { 
+    name: 'Urology', 
+    icon: <GiKidneys />,
+    color: '#3F51B5',
+    description: 'Urinary tract and male reproductive health',
+    cases: ['Prostate care', 'Kidney stones treatment', 'Incontinence management']
+  },
+  { 
+    name: 'Ophthalmology', 
+    icon: <FaEye />,
+    color: '#6366F1',
+    description: 'Eye care and vision health',
+    cases: ['Cataract surgery', 'Glaucoma management', 'Retinal care']
+  },
+  { 
+    name: 'Otolaryngology', 
+    icon: <FaHeadSideCough />,
+    color: '#6B7280',
+    description: 'Ear, nose and throat disorders',
+    cases: ['Hearing loss management', 'Sinusitis treatment', 'Voice disorders']
+  },
+  { 
+    name: 'Anesthesiology', 
+    icon: <FaSyringe />,
+    color: '#8B5CF6',
+    description: 'Pain management and surgical support',
+    cases: ['Surgical anesthesia', 'Pain control', 'Critical care support']
+  },
+  { 
+    name: 'Pathology', 
+    icon: <FaMicroscope />,
+    color: '#475569',
+    description: 'Disease diagnosis through laboratory analysis',
+    cases: ['Biopsy interpretation', 'Genetic testing', 'Forensic pathology']
+  },
+  { 
+    name: 'Surgery', 
+    icon: <FaProcedures />,
+    color: '#DC2626',
+    description: 'Operative treatment of injuries/diseases',
+    cases: ['Minimally invasive surgery', 'Trauma surgery', 'Surgical oncology']
+  }
+];
+
+const features = [
+  {
+    icon: '🆘',
+    audience: 'For Everyone',
+    title: 'Emergency Alert',
+    description: 'Instant help request with GPS location',
+    color: 'red',
+    badgeColor: 'emergency-badge',
+    buttonText: 'Trigger Alert',
+    buttonColor: 'red'
+  },
+  {
+    icon: '📅',
+    audience: 'For Patients',
+    title: 'Book a Specialist',
+    description: 'Schedule paid appointments by specialty',
+    color: 'lavender',
+    badgeColor: 'patient-badge',
+    buttonText: 'Find Doctors',
+    buttonColor: 'lavender'
+  },
+  {
+    icon: '🎓',
+    audience: 'Students/Residents',
+    title: 'Learning Hub',
+    description: 'Access cases, quizzes, and mentor support',
+    color: 'sage',
+    badgeColor: 'student-badge',
+    buttonText: 'Start Learning',
+    buttonColor: 'sage'
+  },
+  {
+    icon: '💬',
+    audience: 'For Doctors',
+    title: 'Case Discussions',
+    description: 'Share knowledge and mentor trainees',
+    color: 'blue',
+    badgeColor: 'doctor-badge',
+    buttonText: 'Join Discussions',
+    buttonColor: 'blue'
+  }
+];
+
+const testimonials = [
+  {
+    quote: "This platform has transformed how we handle emergency cases. The real-time collaboration features are game-changing.",
+    author: 'Dr. Sarah Johnson',
+    role: 'Emergency Physician',
+    specialty: 'Emergency Medicine',
+    badgeClass: 'role-badge doctor-badge',
+    avatar: 'https://randomuser.me/api/portraits/women/44.jpg',
+    rating: 5
+  },
+  {
+    quote: "As a medical student, the interactive learning modules have been invaluable for my clinical rotations preparation.",
+    author: 'Michael Chen',
+    role: 'Medical Student',
+    specialty: 'Medical Education',
+    badgeClass: 'role-badge student-badge',
+    avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
+    rating: 5
+  },
+  {
+    quote: "The specialist matching algorithm saved us crucial time in diagnosing a rare autoimmune condition.",
+    author: 'Dr. Emily Smith',
+    role: 'Rheumatologist',
+    specialty: 'Rheumatology',
+    badgeClass: 'role-badge patient-badge',
+    avatar: 'https://randomuser.me/api/portraits/women/68.jpg',
+    rating: 4
+  },
+  {
+    quote: "Our rural clinic benefits immensely from the telemedicine capabilities. It's like having specialists on call 24/7.",
+    author: 'Nurse James Wilson',
+    role: 'Head Nurse',
+    specialty: 'Family Medicine',
+    badgeClass: 'role-badge doctor-badge',
+    avatar: 'https://randomuser.me/api/portraits/men/45.jpg',
+    rating: 5
+  },
+  {
+    quote: "The surgical simulation tools have dramatically improved our residency training program's effectiveness.",
+    author: 'Dr. Maria Gonzalez',
+    role: 'Surgical Resident',
+    specialty: 'Surgery',
+    badgeClass: 'role-badge student-badge',
+    avatar: 'https://randomuser.me/api/portraits/women/72.jpg',
+    rating: 5
+  }
+];
+
+export default App;

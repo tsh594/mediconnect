@@ -1,0 +1,12 @@
+:root {
+  --primary-color: #8A4FFF;    /* Lavender purple */
+  --secondary-color: #6C9D8F;  /* Muted sage green */
+  --accent-color: #B2E4D5;     /* Soft mint */
+  --dark-text: #2D2D44;        /* Deep navy for text */
+  --light-bg: #F9F6FF;    
+
+  --lavender: #8A4FFF;
+  --lavender-light: #f3eeff;
+  --lavender-dark: #6C3FCC;
+  --sage: #6C9D8F;/* Very light lavender */
+}
