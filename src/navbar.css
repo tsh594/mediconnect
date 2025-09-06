@@ -12,8 +12,11 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
   z-index: 1000;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  display: grid;
+  align-content: start; /* Aligns the grid items to the start (top) of the container */
+  justify-items: center; /* Centers the grid items horizontally */
+  /* Add other styling for your navbar container */
+  
   border-radius: 0; /* 0 border radius instead of 12px */
   max-width: 1600px;
   margin: 0;
