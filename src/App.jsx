@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
+import { v4 as uuidv4 } from 'uuid';
 import { 
   FaStethoscope, FaHeartbeat, FaBrain, FaBaby, FaBone, FaClinicMedical,
   FaUserMd, FaXRay, FaBookMedical, FaFirstAid, FaProcedures, FaMicroscope,
   FaEye, FaAllergies, FaSyringe, FaSearch, FaBookOpen, FaComments, FaStar,
-  FaChevronDown, FaChevronUp 
+  FaChevronDown, FaChevronUp, FaPaperPlane, FaImage, FaTimes, FaUser, FaEnvelope,
+  FaLock, FaMapMarkerAlt, FaSignInAlt
 } from 'react-icons/fa';
 import { FaCut, FaUserAlt, FaRegUser, FaHeadSideCough } from 'react-icons/fa';
 import { GiKidneys, GiLungs, GiSpiderWeb, GiStomach } from 'react-icons/gi';
@@ -11,15 +14,66 @@ import { MdPsychology, MdEmergency, MdForum } from 'react-icons/md';
 import './specialty.css';
 import './index.css';
 
+// Initialize Supabase client with error handling
+let supabase;
+try {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.warn('Supabase environment variables are not set. Using mock client.');
+    throw new Error('Supabase environment variables not set');
+  }
+  
+  supabase = createClient(supabaseUrl, supabaseKey);
+  console.log('Supabase client initialized successfully');
+} catch (error) {
+  console.error('Failed to initialize Supabase client:', error);
+  // Create a mock supabase client for development
+  supabase = {
+    auth: {
+      getSession: () => Promise.resolve({ data: { session: null } }),
+      signUp: () => Promise.resolve({ error: { message: 'Supabase not configured' } }),
+      signInWithPassword: () => Promise.resolve({ error: { message: 'Supabase not configured' } }),
+      signOut: () => Promise.resolve({ error: null }),
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } })
+    },
+    from: () => ({
+      select: () => Promise.resolve({ data: [], error: null }),
+      insert: () => Promise.resolve({ error: { message: 'Supabase not configured' } }),
+      on: () => ({ subscribe: () => {} })
+    }),
+    storage: {
+      from: () => ({
+        upload: () => Promise.resolve({ error: { message: 'Supabase not configured' } }),
+        getPublicUrl: () => ({ data: { publicUrl: null } })
+      })
+    }
+  };
+}
+
 function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isBottom, setIsBottom] = useState(false);
   const [activeSpecialty, setActiveSpecialty] = useState(null);
-  const [bookingStep, setBookingStep] = useState(1);
   const [userRatings, setUserRatings] = useState({});
   const [hoveredAvatar, setHoveredAvatar] = useState(null);
-  const [showAll, setShowAll] = useState(false);
-  const [visibleTestimonials, setVisibleTestimonials] = useState(3);
+  const [showChat, setShowChat] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState('login');
+  const [authForm, setAuthForm] = useState({
+    username: '',
+    email: '',
+    password: '',
+    confirmPassword: ''
+  });
+  const [authError, setAuthError] = useState('');
+  const [supabaseError, setSupabaseError] = useState('');
 
   useEffect(() => {
     const handleScroll = () => {
@@ -47,10 +101,145 @@ function App() {
     return () => observer.disconnect();
   }, []);
 
-  const handleEmergencyClick = () => {
-    navigator.geolocation.getCurrentPosition((position) => {
-      alert(`Emergency alert sent! Location: ${position.coords.latitude}, ${position.coords.longitude}`);
-    });
+  useEffect(() => {
+    const getSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          console.error('Error getting session:', error);
+          setSupabaseError('Failed to connect to authentication service');
+          createAnonymousUser();
+          return;
+        }
+        
+        if (session) {
+          setCurrentUser(session.user);
+          await fetchUserProfile(session.user.id);
+        } else {
+          createAnonymousUser();
+        }
+      } catch (error) {
+        console.error('Error in getSession:', error);
+        createAnonymousUser();
+      }
+    };
+
+    getSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        try {
+          if (session) {
+            setCurrentUser(session.user);
+            await fetchUserProfile(session.user.id);
+          } else {
+            createAnonymousUser();
+          }
+        } catch (error) {
+          console.error('Error in auth state change:', error);
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchMessages();
+      
+      const subscription = supabase
+        .from('messages')
+        .on('INSERT', (payload) => {
+          setMessages(prev => [...prev, payload.new]);
+        })
+        .subscribe();
+      
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
+  }, [currentUser]);
+
+  const createAnonymousUser = async () => {
+    let userId = localStorage.getItem('mediconnect_anonymous_id');
+    if (!userId) {
+      userId = uuidv4();
+      localStorage.setItem('mediconnect_anonymous_id', userId);
+    }
+    setCurrentUser({ id: userId, anonymous: true });
+  };
+
+  const fetchUserProfile = async (userId) => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      
+      if (error) {
+        console.error('Error fetching user profile:', error);
+      }
+    } catch (error) {
+      console.error('Error in fetchUserProfile:', error);
+    }
+  };
+
+  const fetchMessages = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select(`
+          *,
+          user:users(username, avatar_url)
+        `)
+        .order('created_at', { ascending: true });
+      
+      if (error) {
+        console.error('Error fetching messages:', error);
+        setSupabaseError('Failed to load messages');
+      } else {
+        setMessages(data || []);
+      }
+    } catch (error) {
+      console.error('Error in fetchMessages:', error);
+    }
+  };
+
+  const handleEmergencyClick = async () => {
+    try {
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject);
+      });
+      
+      const location = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy
+      };
+      
+      const { error } = await supabase
+        .from('messages')
+        .insert([
+          { 
+            user_id: currentUser.id,
+            text: 'EMERGENCY ALERT - Need immediate assistance!',
+            location: location,
+            created_at: new Date()
+          }
+        ]);
+      
+      if (error) {
+        console.error('Error sending emergency alert:', error);
+        alert('Emergency alert sent locally!');
+      } else {
+        alert(`Emergency alert sent! Location: ${location.latitude}, ${location.longitude}`);
+      }
+    } catch (error) {
+      console.error('Error getting location:', error);
+      alert('Emergency alert sent without location!');
+    }
   };
 
   const handleRating = (author, rating) => {
@@ -60,82 +249,245 @@ function App() {
     }));
   };
 
-const SpecialtyCard = ({ specialty }) => {
-  return (
-    <div className="specialty-card" 
-        style={{ 
-          '--border-color': specialty.color,
-          '--button-color': specialty.color
-        }}>
-      <div className="specialty-content">
-        <div className="specialty-icon" style={{ color: specialty.color }}>
-          {specialty.icon}
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+
+    if (authMode === 'register') {
+      if (authForm.password !== authForm.confirmPassword) {
+        setAuthError('Passwords do not match');
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email: authForm.email,
+          password: authForm.password,
+          options: {
+            data: {
+              username: authForm.username
+            }
+          }
+        });
+
+        if (error) {
+          setAuthError(error.message);
+        } else if (data.user) {
+          try {
+            await supabase
+              .from('users')
+              .insert([
+                {
+                  id: data.user.id,
+                  username: authForm.username,
+                  email: authForm.email
+                }
+              ]);
+          } catch (dbError) {
+            console.error('Error creating user profile:', dbError);
+          }
+          
+          setShowAuthModal(false);
+          setAuthForm({ username: '', email: '', password: '', confirmPassword: '' });
+        }
+      } catch (error) {
+        setAuthError('Authentication service unavailable');
+      }
+    } else {
+      try {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: authForm.email,
+          password: authForm.password
+        });
+
+        if (error) {
+          setAuthError(error.message);
+        } else {
+          setShowAuthModal(false);
+          setAuthForm({ username: '', email: '', password: '', confirmPassword: '' });
+        }
+      } catch (error) {
+        setAuthError('Authentication service unavailable');
+      }
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut();
+      setCurrentUser(null);
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if (!newMessage.trim() && !selectedImage) return;
+    
+    setIsUploading(true);
+    let imageUrl = null;
+    
+    if (selectedImage) {
+      try {
+        const fileExt = selectedImage.name.split('.').pop();
+        const fileName = `${uuidv4()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from('message-images')
+          .upload(fileName, selectedImage);
+        
+        if (uploadError) {
+          console.error('Error uploading image:', uploadError);
+          setIsUploading(false);
+          return;
+        }
+        
+        const { data: { publicUrl } } = supabase.storage
+          .from('message-images')
+          .getPublicUrl(fileName);
+        
+        imageUrl = publicUrl;
+      } catch (error) {
+        console.error('Error in image upload:', error);
+        setIsUploading(false);
+        return;
+      }
+    }
+    
+    let location = null;
+    try {
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          timeout: 5000,
+          maximumAge: 60000
+        });
+      });
+      location = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude
+      };
+    } catch (error) {
+      console.log('Location access not available or denied');
+    }
+    
+    try {
+      const { error } = await supabase
+        .from('messages')
+        .insert([
+          { 
+            text: newMessage, 
+            image_url: imageUrl,
+            location: location,
+            user_id: currentUser.id,
+            created_at: new Date()
+          }
+        ]);
+      
+      if (error) {
+        console.error('Error sending message:', error);
+        setSupabaseError('Failed to send message');
+      } else {
+        setNewMessage('');
+        setSelectedImage(null);
+      }
+    } catch (error) {
+      console.error('Error in send message:', error);
+      setSupabaseError('Failed to send message');
+    }
+    
+    setIsUploading(false);
+  };
+
+  const handleImageSelect = (e) => {
+    const file = e.target.files[0];
+    if (file && file.type.startsWith('image/')) {
+      setSelectedImage(file);
+    }
+  };
+
+  const removeImage = () => {
+    setSelectedImage(null);
+  };
+
+  const SpecialtyCard = ({ specialty }) => {
+    return (
+      <div className={`specialty-card specialty-${specialty.name.toLowerCase().replace(/\s+/g, '-')}`}>
+        <div className="specialty-content">
+          <div className={`specialty-icon icon-${specialty.name.toLowerCase().replace(/\s+/g, '-')}`}>
+            {specialty.icon}
+          </div>
+          <h3>{specialty.name}</h3>
+          <p className="specialty-description">{specialty.description}</p>
+          <div className="specialty-cases">
+            {specialty.cases.map((caseStudy, index) => (
+              <span key={index} className="case-tag">{caseStudy}</span>
+            ))}
+          </div>
         </div>
-        <h3>{specialty.name}</h3>
-        <p className="specialty-description">{specialty.description}</p>
-        <div className="specialty-cases">
-          {specialty.cases.map((caseStudy, index) => (
-            <span key={index} className="case-tag">{caseStudy}</span>
-          ))}
+        <div className="specialty-btn-container">
+          <button className="specialty-btn">
+            Book Consultation
+          </button>
         </div>
       </div>
-      <div className="specialty-btn-container">
-        <button className="specialty-btn">
-          Book Consultation
-        </button>
-      </div>
-    </div>
-  );
-};
+    );
+  };
 
   return (
     <div className="app">
+      {/* Supabase Connection Error Banner */}
+      {supabaseError && (
+        <div className="supabase-error-banner">
+          <span>{supabaseError}</span>
+          <button onClick={() => setSupabaseError('')}>×</button>
+        </div>
+      )}
+
       <a href="/" className="logo-container hidden">
         <img src="/logo-w1.png" alt="MediConnect" className="logo-img animate-pulse" />
         <span className="logo-text gradient-text">MediConnect</span>
       </a>
-
-<nav className={`navbar ${isMenuOpen ? 'menu-open' : ''}`}>
-  <div 
-    className={`nav-content ${isMenuOpen ? 'visible' : ''}`}
-  >
-    <input 
-      type="text" 
-      className="search-bar glassmorphism-input" 
-      placeholder="Search services..." 
-    />
-    <div className={`nav-links ${isMenuOpen ? 'active' : ''}`}>
-      {['Learning', 'Appointments', 'Emergencies'].map((link) => (
-        <a 
-          key={link}
-          href={`/${link.toLowerCase()}`} 
-          className="nav-link hover:text-lavender-dark"
-        >
-          {link}
-        </a>
-      ))}
-      <a href="/login" className="btn btn-sage">
-        Professional Login <span className="notification-bubble">2</span>
-      </a>
-    </div>
-  </div>
-
-  <div 
-    className="hamburger-container"
-    onClick={() => setIsMenuOpen(!isMenuOpen)}
-    aria-label="Toggle navigation menu"
-  >
-    <div className="hamburger">
-      {[1, 2, 3].map((i) => (
+      
+      <nav className={`navbar ${isMenuOpen ? 'menu-open' : ''}`}>
         <div 
-          key={i}
-          className={`hamburger-line ${isMenuOpen ? 'open' : ''}`}
-        />
-      ))}
-    </div>
-    <div className={`hamburger-pulse ${isMenuOpen ? 'animate-ripple' : ''}`} />
-  </div>
-</nav>
+          className={`nav-content ${isMenuOpen ? 'visible' : ''}`}
+        >
+          <input 
+            type="text" 
+            className="search-bar glassmorphism-input" 
+            placeholder="Search services..." 
+          />
+          <div className={`nav-links ${isMenuOpen ? 'active' : ''}`}>
+            {['Learning', 'Appointments', 'Emergencies'].map((link) => (
+              <a 
+                key={link}
+                href={`/${link.toLowerCase()}`} 
+                className="nav-link hover-text-lavender-dark"
+              >
+                {link}
+              </a>
+            ))}
+            <a href="/login" className="btn btn-sage">
+              Professional Login <span className="notification-bubble">2</span>
+            </a>
+          </div>
+        </div>
+
+        <div 
+          className="hamburger-container"
+          onClick={() => setIsMenuOpen(!isMenuOpen)}
+          aria-label="Toggle navigation menu"
+        >
+          <div className="hamburger">
+            {[1, 2, 3].map((i) => (
+              <div 
+                key={i}
+                className={`hamburger-line ${isMenuOpen ? 'open' : ''}`}
+              />
+            ))}
+          </div>
+          <div className={`hamburger-pulse ${isMenuOpen ? 'animate-ripple' : ''}`} />
+        </div>
+      </nav>
 
       <main>
         <div className="massive-logo-wrapper">
@@ -154,12 +506,12 @@ const SpecialtyCard = ({ specialty }) => {
               </h1>
               <div className="cta-buttons">
                 <button 
-                  className="btn btn-lavender hover:scale-105"
+                  className="btn btn-lavender hover-scale-105"
                   onClick={handleEmergencyClick}
                 >
                   Emergency Alert
                 </button>
-                <button className="btn btn-sage hover:scale-105">
+                <button className="btn btn-sage hover-scale-105">
                   Book Appointment
                 </button>
               </div>
@@ -170,8 +522,7 @@ const SpecialtyCard = ({ specialty }) => {
               <img 
                 src="/collaborate.jpg" 
                 alt="Healthcare professionals collaborating" 
-                className="floating transition-transform duration-300 hover:scale-105"
-                style={{ borderRadius: '20px' }}
+                className="floating transition-transform-duration-300 hover-scale-105 hero-image-radius"
               />
             </div>
 
@@ -288,7 +639,7 @@ const SpecialtyCard = ({ specialty }) => {
         <section className="learning hidden">
           <h2 className="text-lavender-dark">
             Medical Learning Hub & Clinical Cognition Engine
-          </h2>
+            </h2>
           <p className="section-description">
             Transform theoretical knowledge into practical mastery through our  
             <span className="highlight">3D anatomy visualizer</span>, 
@@ -303,7 +654,7 @@ const SpecialtyCard = ({ specialty }) => {
                 data-delay={i * 0.1}
                 onClick={() => setActiveSpecialty(specialty)}
               >
-                <div className="learning-icon" style={{ color: specialty.color }}>
+                <div className={`learning-icon icon-${specialty.name.toLowerCase().replace(/\s+/g, '-')}`}>
                   {specialty.icon}
                 </div>
                 <h3>{specialty.name}</h3>
@@ -344,7 +695,7 @@ const SpecialtyCard = ({ specialty }) => {
             {activeSpecialty && (
               <div className="booking-details">
                 <div className="specialty-header">
-                  <div className="specialty-icon" style={{ color: activeSpecialty.color }}>
+                  <div className={`specialty-icon icon-${activeSpecialty.name.toLowerCase().replace(/\s+/g, '-')}`}>
                     {activeSpecialty.icon}
                   </div>
                   <h3>{activeSpecialty.name} Consultation</h3>
@@ -357,91 +708,286 @@ const SpecialtyCard = ({ specialty }) => {
                 <button className="btn btn-lavender">
                   Proceed to Payment
                 </button>
-              </div>
+                </div>
             )}
           </div>
         </section>
 
-<section className="testimonials hidden">
-  <h2>Voices of Trust</h2>
-  <p className="section-subtitle hidden">
-    Join 3,000+ medical professionals revolutionizing care
-  </p>
+        <section className="testimonials hidden">
+          <h2>Voices of Trust</h2>
+          <p className="section-subtitle hidden">
+            Join 3,000+ medical professionals revolutionizing care
+          </p>
 
-  <div className="testimonial-carousel">
-    {testimonials.map((testimonial, i) => {
-      const userRating = userRatings[testimonial.author] || testimonial.rating;
-      
-      return (
-        <div 
-          key={i}
-          className="testimonial-card hidden stagger"
-          data-delay={i * 0.2}
-        >
-          <div className="testimonial-content">
-            <div 
-              className={`testimonial-avatar ${hoveredAvatar === testimonial.author ? 'avatar-hover' : ''}`}
-              onMouseEnter={() => setHoveredAvatar(testimonial.author)}
-              onMouseLeave={() => setHoveredAvatar(null)}
-            >
-              <img 
-                src={testimonial.avatar} 
-                alt={testimonial.author}
-                className="avatar-img"
-              />
-              {hoveredAvatar === testimonial.author && (
-                <div className="avatar-tooltip">
-                  {testimonial.author}
+          <div className="testimonial-carousel">
+            {testimonials.map((testimonial, i) => {
+              const userRating = userRatings[testimonial.author] || testimonial.rating;
+              
+              return (
+                <div 
+                  key={i}
+                  className="testimonial-card hidden stagger"
+                  data-delay={i * 0.2}
+                >
+                  <div className="testimonial-content">
+                    <div 
+                      className={`testimonial-avatar ${hoveredAvatar === testimonial.author ? 'avatar-hover' : ''}`}
+                      onMouseEnter={() => setHoveredAvatar(testimonial.author)}
+                      onMouseLeave={() => setHoveredAvatar(null)}
+                    >
+                      <img 
+                        src={testimonial.avatar} 
+                        alt={testimonial.author}
+                        className="avatar-img"
+                      />
+                      {hoveredAvatar === testimonial.author && (
+                        <div className="avatar-tooltip">
+                          {testimonial.author}
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="rating-container">
+                      <div className="user-rating">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <FaStar
+                            key={star}
+                            className={`rating-star ${star <= userRating ? 'active' : ''}`}
+                            onClick={() => handleRating(testimonial.author, star)}
+                          />
+                        ))}
+                      </div>
+                      <span className="rating-text">
+                        {userRating}.0/5.0
+                      </span>
+                    </div>
+
+                    <p className="testimonial-quote">"{testimonial.quote}"</p>
+                    
+                    <div className="author">
+                      <span className={testimonial.badgeClass}>
+                        {testimonial.author}
+                      </span>
+                      <span className="author-role">{testimonial.role}</span>
+                    </div>
+                  </div>
+
+                  <div className="testimonial-footer">
+                    <button className="btn btn-lavender w-full hover-scale-102 transition-transform">
+                      <FaComments className="mr-2" />
+                      View Full Story
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-            
-            <div className="rating-container">
-              <div className="user-rating">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <FaStar
-                    key={star}
-                    className={`rating-star ${star <= userRating ? 'active' : ''}`}
-                    onClick={() => handleRating(testimonial.author, star)}
-                  />
-                ))}
-              </div>
-              <span className="rating-text">
-                {userRating}.0/5.0
-              </span>
-            </div>
-
-            <p className="testimonial-quote">"{testimonial.quote}"</p>
-            
-            <div className="author">
-              <span className={testimonial.badgeClass}>
-                {testimonial.author}
-              </span>
-              <span className="author-role">{testimonial.role}</span>
-            </div>
+              );
+            })}
           </div>
 
-          <div className="testimonial-footer">
-            <button className="btn btn-lavender w-full hover:scale-[1.02] transition-transform">
+          <div className="text-center mt-8">
+            <button className="btn btn-lavender px-8 py-3 rounded-lg hover-bg-opacity-90 
+              transition-all duration-300 transform hover-translate-y-0.5 shadow-lg
+              bg-gradient-to-r from-purple-600 to-blue-500 text-white">
               <FaComments className="mr-2" />
-              View Full Story
+              Share Your Story
             </button>
           </div>
-        </div>
-      );
-    })}
-  </div>
-
-  <div className="text-center mt-8">
-    <button className="btn btn-lavender px-8 py-3 rounded-lg hover:bg-opacity-90 
-      transition-all duration-300 transform hover:-translate-y-0.5 shadow-lg
-      bg-gradient-to-r from-purple-600 to-blue-500 text-white">
-      <FaComments className="mr-2" />
-      Share Your Story
-    </button>
-  </div>
-</section>
+        </section>
       </main>
+
+      {/* Auth Modal */}
+      {showAuthModal && (
+        <div className="auth-modal">
+          <div className="auth-content">
+            <button 
+              className="close-auth"
+              onClick={() => setShowAuthModal(false)}
+            >
+              <FaTimes />
+            </button>
+            
+            <h2>{authMode === 'login' ? 'Sign In' : 'Create Account'}</h2>
+            
+            {authError && <div className="auth-error">{authError}</div>}
+            
+            <form onSubmit={handleAuth}>
+              {authMode === 'register' && (
+                <div className="input-group">
+                  <FaUser className="input-icon" />
+                  <input
+                    type="text"
+                    placeholder="Username"
+                    value={authForm.username}
+                    onChange={(e) => setAuthForm({...authForm, username: e.target.value})}
+                    required
+                  />
+                </div>
+              )}
+              
+              <div className="input-group">
+                <FaEnvelope className="input-icon" />
+                <input
+                    type="email"
+                    placeholder="Email"
+                    value={authForm.email}
+                    onChange={(e) => setAuthForm({...authForm, email: e.target.value})}
+                    required
+                  />
+              </div>
+              
+              <div className="input-group">
+                <FaLock className="input-icon" />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={authForm.password}
+                  onChange={(e) => setAuthForm({...authForm, password: e.target.value})}
+                  required
+                />
+              </div>
+              
+              {authMode === 'register' && (
+                <div className="input-group">
+                  <FaLock className="input-icon" />
+                  <input
+                    type="password"
+                    placeholder="Confirm Password"
+                    value={authForm.confirmPassword}
+                    onChange={(e) => setAuthForm({...authForm, confirmPassword: e.target.value})}
+                    required
+                  />
+                </div>
+              )}
+              
+              <button type="submit" className="auth-submit-btn">
+                {authMode === 'login' ? 'Sign In' : 'Create Account'}
+              </button>
+            </form>
+            
+            <div className="auth-switch">
+              {authMode === 'login' ? (
+                <p>
+                  Don't have an account?{' '}
+                  <button onClick={() => setAuthMode('register')}>
+                    Sign Up
+                  </button>
+                </p>
+              ) : (
+                <p>
+                  Already have an account?{' '}
+                  <button onClick={() => setAuthMode('login')}>
+                    Sign In
+                  </button>
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User Auth Button */}
+      <div className="user-auth-container">
+        {currentUser && !currentUser.anonymous ? (
+          <button className="user-profile-btn" onClick={handleSignOut}>
+            <FaUser /> Sign Out
+          </button>
+        ) : (
+          <button 
+            className="user-auth-btn"
+            onClick={() => {
+              setShowAuthModal(true);
+              setAuthMode('login');
+            }}
+          >
+            <FaSignInAlt /> Sign In
+          </button>
+        )}
+      </div>
+
+      {/* Chat Toggle Button */}
+      <button 
+        className="chat-toggle-btn"
+        onClick={() => setShowChat(!showChat)}
+      >
+        <FaComments />
+        {messages.length > 0 && <span className="message-indicator"></span>}
+      </button>
+
+      {/* Chat Modal */}
+      {showChat && (
+        <div className="chat-modal">
+          <div className="chat-header">
+            <h3>Community Chat</h3>
+            <button 
+              className="close-chat"
+              onClick={() => setShowChat(false)}
+            >
+              <FaTimes />
+            </button>
+          </div>
+          <div className="messages-container">
+            {messages.map((message) => (
+              <div 
+                key={message.id} 
+                className={`message ${message.user_id === currentUser?.id ? 'own-message' : ''}`}
+              >
+                {message.image_url && (
+                  <div className="message-image">
+                    <img src={message.image_url} alt="Shared content" />
+                  </div>
+                )}
+                {message.text && <p>{message.text}</p>}
+                {message.location && (
+                  <div className="message-location">
+                    <FaMapMarkerAlt />
+                    <span>Location shared</span>
+                  </div>
+                )}
+                <span className="message-time">
+                  {new Date(message.created_at).toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="message-input">
+            {selectedImage && (
+              <div className="image-preview">
+                <img src={URL.createObjectURL(selectedImage)} alt="Preview" />
+                <button onClick={removeImage} className="remove-image">
+                  <FaTimes />
+                </button>
+              </div>
+            )}
+            <div className="input-container">
+              <input
+                type="text"
+                placeholder="Type your message..."
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                disabled={isUploading}
+              />
+              <label htmlFor="image-upload" className="image-upload-btn">
+                <FaImage />
+              </label>
+              <input
+                id="image-upload"
+                type="file"
+                accept="image/*"
+                onChange={handleImageSelect}
+                style={{ display: 'none' }}
+                disabled={isUploading}
+              />
+              <button 
+                onClick={handleSendMessage}
+                disabled={(!newMessage.trim() && !selectedImage) || isUploading}
+                className="send-btn"
+              >
+                {isUploading ? <div className="spinner"></div> : <FaPaperPlane />}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <footer className="hidden">
         <div className="footer-content">
@@ -482,6 +1028,7 @@ const SpecialtyCard = ({ specialty }) => {
     </div>
   );
 }
+
 
 // Medical Specialties Data with Professional Icons
 const medicalSpecialties = [

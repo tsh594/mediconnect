@@ -1,12 +1,15 @@
 :root {
-  --primary-color: #8A4FFF;    /* Lavender purple */
-  --secondary-color: #6C9D8F;  /* Muted sage green */
-  --accent-color: #B2E4D5;     /* Soft mint */
-  --dark-text: #2D2D44;        /* Deep navy for text */
-  --light-bg: #F9F6FF;    
-
   --lavender: #8A4FFF;
-  --lavender-light: #f3eeff;
   --lavender-dark: #6C3FCC;
-  --sage: #6C9D8F;/* Very light lavender */
+  --lavender-light: #f3eeff;
+  --sage: #6C9D8F;
+  --sage-dark: #5A8A7D;
+  --white: #FFFFFF;
+  --gray-100: #F7FAFC;
+  --gray-200: #EDF2F7;
+  --gray-300: #E2E8F0;
+  --gray-400: #CBD5E0;
+  --gray-500: #A0AEC0;
+  --gray-600: #718096;
+  --emergency: #E53E3E;
 }
