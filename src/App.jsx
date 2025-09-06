@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
 import { 
@@ -6,7 +6,8 @@ import {
   FaUserMd, FaXRay, FaBookMedical, FaFirstAid, FaProcedures, FaMicroscope,
   FaEye, FaAllergies, FaSyringe, FaSearch, FaBookOpen, FaComments, FaStar,
   FaChevronDown, FaChevronUp, FaPaperPlane, FaImage, FaTimes, FaUser, FaEnvelope,
-  FaLock, FaMapMarkerAlt, FaSignInAlt
+  FaLock, FaMapMarkerAlt, FaSignInAlt, FaSignOutAlt, FaUserCircle, FaCog,
+  FaPalette, FaFont, FaSave, FaUndo
 } from 'react-icons/fa';
 import { FaCut, FaUserAlt, FaRegUser, FaHeadSideCough } from 'react-icons/fa';
 import { GiKidneys, GiLungs, GiSpiderWeb, GiStomach } from 'react-icons/gi';
@@ -15,42 +16,99 @@ import './specialty.css';
 import './index.css';
 
 // Initialize Supabase client with error handling
-let supabase;
-try {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  
-  if (!supabaseUrl || !supabaseKey) {
-    console.warn('Supabase environment variables are not set. Using mock client.');
-    throw new Error('Supabase environment variables not set');
+const getSupabaseClient = () => {
+  try {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    
+    // Check if environment variables are set
+    if (!supabaseUrl || !supabaseKey || 
+        supabaseUrl.includes('your-project-ref') || 
+        supabaseKey.includes('your-anon-key-here')) {
+      console.warn('Supabase not configured. Please set up your .env file');
+      return createMockClient();
+    }
+    
+    return createClient(supabaseUrl, supabaseKey);
+  } catch (error) {
+    console.error('Error creating Supabase client:', error);
+    return createMockClient();
   }
-  
-  supabase = createClient(supabaseUrl, supabaseKey);
-  console.log('Supabase client initialized successfully');
-} catch (error) {
-  console.error('Failed to initialize Supabase client:', error);
-  // Create a mock supabase client for development
-  supabase = {
+};
+
+// Mock client for development
+const createMockClient = () => {
+  console.log('Using mock Supabase client for development');
+  return {
     auth: {
-      getSession: () => Promise.resolve({ data: { session: null } }),
-      signUp: () => Promise.resolve({ error: { message: 'Supabase not configured' } }),
-      signInWithPassword: () => Promise.resolve({ error: { message: 'Supabase not configured' } }),
+      getSession: () => Promise.resolve({ data: { session: null }, error: null }),
+      signUp: (credentials) => {
+        console.log('Mock signUp called with:', credentials);
+        return Promise.resolve({ 
+          data: { 
+            user: { 
+              id: uuidv4(), 
+              email: credentials.email,
+              user_metadata: { username: credentials.options?.data?.username }
+            } 
+          }, 
+          error: null 
+        });
+      },
+      signInWithPassword: () => Promise.resolve({ data: { user: null }, error: { message: 'Supabase not configured' } }),
       signOut: () => Promise.resolve({ error: null }),
-      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } })
+      onAuthStateChange: (callback) => {
+        // Mock subscription
+        const subscription = {
+          unsubscribe: () => {}
+        };
+        return { data: { subscription } };
+      }
     },
-    from: () => ({
+    from: (table) => ({
       select: () => Promise.resolve({ data: [], error: null }),
-      insert: () => Promise.resolve({ error: { message: 'Supabase not configured' } }),
-      on: () => ({ subscribe: () => {} })
+      insert: (data) => {
+        console.log('Mock insert called for table:', table, 'with data:', data);
+        return Promise.resolve({ data: null, error: null });
+      },
+      update: () => Promise.resolve({ data: null, error: null }),
+      on: (event, callback) => ({
+        subscribe: () => {
+          // Mock subscription that does nothing
+          return {
+            unsubscribe: () => {}
+          };
+        }
+      })
+    }),
+    channel: () => ({
+      on: () => ({
+        subscribe: () => ({
+          unsubscribe: () => {}
+        })
+      })
     }),
     storage: {
       from: () => ({
-        upload: () => Promise.resolve({ error: { message: 'Supabase not configured' } }),
+        upload: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
         getPublicUrl: () => ({ data: { publicUrl: null } })
       })
     }
   };
-}
+};
+
+const supabase = getSupabaseClient();
+
+// Default user preferences
+const defaultPreferences = {
+  primaryColor: '#4f46e5',
+  secondaryColor: '#10b981',
+  backgroundColor: '#f8fafc',
+  textColor: '#1e293b',
+  fontSize: '16px',
+  fontFamily: 'system-ui, sans-serif',
+  borderRadius: '8px'
+};
 
 function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -63,6 +121,13 @@ function App() {
   const [newMessage, setNewMessage] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
+  const currentUserRef = useRef(currentUser);
+
+  // Add this effect to sync the ref with the state
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
   const [isUploading, setIsUploading] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState('login');
@@ -73,7 +138,79 @@ function App() {
     confirmPassword: ''
   });
   const [authError, setAuthError] = useState('');
-  const [supabaseError, setSupabaseError] = useState('');
+  const [supabaseConfigured, setSupabaseConfigured] = useState(true);
+  const [authSuccess, setAuthSuccess] = useState('');
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [userPreferences, setUserPreferences] = useState(defaultPreferences);
+  const [tempPreferences, setTempPreferences] = useState(defaultPreferences);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef(null);
+
+  // Apply user preferences to the document
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--primary-color', userPreferences.primaryColor);
+    root.style.setProperty('--secondary-color', userPreferences.secondaryColor);
+    root.style.setProperty('--background-color', userPreferences.backgroundColor);
+    root.style.setProperty('--text-color', userPreferences.textColor);
+    root.style.setProperty('--font-size', userPreferences.fontSize);
+    root.style.setProperty('--font-family', userPreferences.fontFamily);
+    root.style.setProperty('--border-radius', userPreferences.borderRadius);
+  }, [userPreferences]);
+
+    // ADD this useEffect to populate the profile settings form when the user loads
+  useEffect(() => {
+    if (currentUser && !currentUser.anonymous) {
+      setAuthForm(prev => ({
+        ...prev,
+        username: currentUser.username || '',
+        email: currentUser.email || ''
+      }));
+      setAvatarPreview(currentUser.avatar_url);
+    }
+  }, [currentUser]);
+
+  // ADD this useEffect to handle closing the dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Load user preferences from localStorage
+  useEffect(() => {
+    const savedPreferences = localStorage.getItem('userPreferences');
+    if (savedPreferences) {
+      try {
+        const parsedPreferences = JSON.parse(savedPreferences);
+        setUserPreferences(parsedPreferences);
+        setTempPreferences(parsedPreferences);
+      } catch (error) {
+        console.error('Error parsing saved preferences:', error);
+      }
+    }
+  }, []);
+
+  // Check if Supabase is properly configured
+  useEffect(() => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    
+    if (!supabaseUrl || !supabaseKey || 
+        supabaseUrl.includes('your-project-ref') || 
+        supabaseKey.includes('your-anon-key-here')) {
+      setSupabaseConfigured(false);
+      console.warn('Supabase not configured. Some features will be limited.');
+    }
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -107,7 +244,6 @@ function App() {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) {
           console.error('Error getting session:', error);
-          setSupabaseError('Failed to connect to authentication service');
           createAnonymousUser();
           return;
         }
@@ -132,8 +268,10 @@ function App() {
           if (session) {
             setCurrentUser(session.user);
             await fetchUserProfile(session.user.id);
-          } else {
+          } else if (!currentUserRef.current) {
             createAnonymousUser();
+          } else {
+            setCurrentUser(null);
           }
         } catch (error) {
           console.error('Error in auth state change:', error);
@@ -145,19 +283,27 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser && !currentUser.anonymous) {
       fetchMessages();
       
-      const subscription = supabase
-        .from('messages')
-        .on('INSERT', (payload) => {
-          setMessages(prev => [...prev, payload.new]);
-        })
-        .subscribe();
-      
-      return () => {
-        subscription.unsubscribe();
-      };
+      // Use the correct real-time subscription method
+      try {
+        const subscription = supabase
+          .channel('messages')
+          .on('postgres_changes', 
+            { event: 'INSERT', schema: 'public', table: 'messages' }, 
+            (payload) => {
+              setMessages(prev => [...prev, payload.new]);
+            }
+          )
+          .subscribe();
+        
+        return () => {
+          subscription.unsubscribe();
+        };
+      } catch (error) {
+        console.error('Error setting up real-time subscription:', error);
+      }
     }
   }, [currentUser]);
 
@@ -180,9 +326,49 @@ function App() {
       
       if (error) {
         console.error('Error fetching user profile:', error);
+        // If user doesn't exist in the users table, create a profile
+        if (error.code === 'PGRST116') {
+          await createUserProfile(userId);
+        }
+      } else if (data) {
+        // Update current user with profile data
+        setCurrentUser(prev => ({ ...prev, ...data }));
       }
     } catch (error) {
       console.error('Error in fetchUserProfile:', error);
+    }
+  };
+
+  const createUserProfile = async (userId) => {
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError) {
+        console.error('Error getting user:', authError);
+        return;
+      }
+      
+      const { error } = await supabase
+        .from('users')
+        .insert([
+          {
+            id: userId,
+            username: user.user_metadata?.username || user.email.split('@')[0],
+            email: user.email,
+            avatar_url: null,
+            preferences: defaultPreferences,
+            created_at: new Date()
+          }
+        ]);
+      
+      if (error) {
+        console.error('Error creating user profile:', error);
+      } else {
+        // Refetch the user profile
+        await fetchUserProfile(userId);
+      }
+    } catch (error) {
+      console.error('Error in createUserProfile:', error);
     }
   };
 
@@ -198,7 +384,6 @@ function App() {
       
       if (error) {
         console.error('Error fetching messages:', error);
-        setSupabaseError('Failed to load messages');
       } else {
         setMessages(data || []);
       }
@@ -249,9 +434,28 @@ function App() {
     }));
   };
 
+  const handleAvatarSelect = (e) => {
+    const file = e.target.files[0];
+    if (file && file.type.startsWith('image/')) {
+      setAvatarFile(file);
+      setAvatarPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const removeAvatar = () => {
+    setAvatarFile(null);
+    setAvatarPreview(null);
+  };
+
   const handleAuth = async (e) => {
     e.preventDefault();
     setAuthError('');
+    setAuthSuccess('');
+
+    if (!supabaseConfigured) {
+      setAuthError('Supabase not configured. Please set up your .env file with VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY');
+      return;
+    }
 
     if (authMode === 'register') {
       if (authForm.password !== authForm.confirmPassword) {
@@ -259,7 +463,13 @@ function App() {
         return;
       }
 
+      if (authForm.password.length < 6) {
+        setAuthError('Password must be at least 6 characters long');
+        return;
+      }
+
       try {
+        // First sign up the user
         const { data, error } = await supabase.auth.signUp({
           email: authForm.email,
           password: authForm.password,
@@ -273,29 +483,73 @@ function App() {
         if (error) {
           setAuthError(error.message);
         } else if (data.user) {
+          let avatarUrl = null;
+          
+          // Upload avatar if selected
+          if (avatarFile) {
+            try {
+              const fileExt = avatarFile.name.split('.').pop();
+              const fileName = `${data.user.id}.${fileExt}`;
+              const { error: uploadError } = await supabase.storage
+                .from('avatars')
+                .upload(fileName, avatarFile);
+              
+              if (uploadError) {
+                console.error('Error uploading avatar:', uploadError);
+              } else {
+                const { data: { publicUrl } } = supabase.storage
+                  .from('avatars')
+                  .getPublicUrl(fileName);
+                
+                avatarUrl = publicUrl;
+              }
+            } catch (error) {
+              console.error('Error in avatar upload:', error);
+            }
+          }
+          
+          // Create user profile in the database
           try {
-            await supabase
+            const { error: dbError } = await supabase
               .from('users')
               .insert([
                 {
                   id: data.user.id,
                   username: authForm.username,
-                  email: authForm.email
+                  email: authForm.email,
+                  avatar_url: avatarUrl,
+                  preferences: defaultPreferences,
+                  created_at: new Date()
                 }
               ]);
+
+            if (dbError) {
+              console.error('Error creating user profile:', dbError);
+              setAuthError('Account created but profile setup failed. Please contact support.');
+            } else {
+              setAuthSuccess('Account created successfully! Please check your email for verification.');
+              setAuthForm({ username: '', email: '', password: '', confirmPassword: '' });
+              setAvatarFile(null);
+              setAvatarPreview(null);
+              
+              // Auto-close modal after 2 seconds
+              setTimeout(() => {
+                setShowAuthModal(false);
+              }, 2000);
+            }
           } catch (dbError) {
             console.error('Error creating user profile:', dbError);
+            setAuthError('Account created but profile setup failed. Please contact support.');
           }
-          
-          setShowAuthModal(false);
-          setAuthForm({ username: '', email: '', password: '', confirmPassword: '' });
         }
       } catch (error) {
-        setAuthError('Authentication service unavailable');
+        console.error('Authentication error:', error);
+        setAuthError('Authentication service unavailable. Please try again later.');
       }
     } else {
+      // Login logic
       try {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email: authForm.email,
           password: authForm.password
         });
@@ -305,25 +559,35 @@ function App() {
         } else {
           setShowAuthModal(false);
           setAuthForm({ username: '', email: '', password: '', confirmPassword: '' });
+          setAuthSuccess('Login successful!');
         }
       } catch (error) {
-        setAuthError('Authentication service unavailable');
+        console.error('Login error:', error);
+        setAuthError('Login service unavailable. Please try again later.');
       }
     }
   };
 
   const handleSignOut = async () => {
-    try {
-      await supabase.auth.signOut();
-      setCurrentUser(null);
-    } catch (error) {
-      console.error('Error signing out:', error);
-    }
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Error signing out:', error.message);
+      } else {
+        // Immediately update UI for a responsive feel
+        setCurrentUser(null);
+        setIsUserMenuOpen(false); // Close the dropdown
+        setAuthSuccess('You have been signed out.');
+      }
   };
 
   const handleSendMessage = async () => {
     if (!newMessage.trim() && !selectedImage) return;
     
+    if (!supabaseConfigured) {
+      setAuthError('Chat feature unavailable. Please configure Supabase first.');
+      return;
+    }
+
     setIsUploading(true);
     let imageUrl = null;
     
@@ -384,14 +648,12 @@ function App() {
       
       if (error) {
         console.error('Error sending message:', error);
-        setSupabaseError('Failed to send message');
       } else {
         setNewMessage('');
         setSelectedImage(null);
       }
     } catch (error) {
       console.error('Error in send message:', error);
-      setSupabaseError('Failed to send message');
     }
     
     setIsUploading(false);
@@ -407,6 +669,97 @@ function App() {
   const removeImage = () => {
     setSelectedImage(null);
   };
+
+  const handleSavePreferences = async () => {
+    // Save to localStorage
+    localStorage.setItem('userPreferences', JSON.stringify(tempPreferences));
+    setUserPreferences(tempPreferences);
+    
+    // If user is logged in, save to database
+    if (currentUser && !currentUser.anonymous) {
+      try {
+        const { error } = await supabase
+          .from('users')
+          .update({ preferences: tempPreferences })
+          .eq('id', currentUser.id);
+        
+        if (error) {
+          console.error('Error saving preferences:', error);
+        } else {
+          setAuthSuccess('Preferences saved successfully!');
+        }
+      } catch (error) {
+        console.error('Error saving preferences:', error);
+      }
+    }
+    
+    setShowSettings(false);
+  };
+
+  const handleResetPreferences = () => {
+    setTempPreferences(defaultPreferences);
+  };
+
+  const handleUpdateProfile = async () => {
+      if (!currentUser || currentUser.anonymous) return;
+
+      // This part of the logic remains the same
+      try {
+        let updated = false;
+        // Update username if changed
+        if (currentUser.username !== authForm.username && authForm.username) {
+          const { error } = await supabase
+            .from('users')
+            .update({ username: authForm.username })
+            .eq('id', currentUser.id);
+
+          if (error) {
+            console.error('Error updating username:', error);
+          } else {
+            updated = true;
+          }
+        }
+
+        // Update avatar if changed
+        if (avatarFile) {
+          const fileExt = avatarFile.name.split('.').pop();
+          // Use timestamp to avoid caching issues
+          const fileName = `${currentUser.id}.${fileExt}?t=${new Date().getTime()}`;
+          const { error: uploadError } = await supabase.storage
+            .from('avatars')
+            .upload(fileName, avatarFile, { upsert: true });
+
+          if (uploadError) {
+            console.error('Error uploading avatar:', uploadError);
+          } else {
+            const { data: { publicUrl } } = supabase.storage
+              .from('avatars')
+              .getPublicUrl(fileName);
+
+            const { error: updateError } = await supabase
+              .from('users')
+              .update({ avatar_url: publicUrl })
+              .eq('id', currentUser.id);
+
+            if (updateError) {
+              console.error('Error updating avatar URL:', updateError);
+            } else {
+              updated = true;
+            }
+          }
+        }
+
+        // Refetch user profile if anything was updated
+        if (updated) {
+          await fetchUserProfile(currentUser.id);
+          setAvatarFile(null);
+          setAuthSuccess('Profile updated successfully!');
+          setIsUserMenuOpen(false); // <-- ADD THIS to close the dropdown on success
+        }
+      } catch (error) {
+        console.error('Error updating profile:', error);
+      }
+    };
 
   const SpecialtyCard = ({ specialty }) => {
     return (
@@ -434,11 +787,49 @@ function App() {
 
   return (
     <div className="app">
-      {/* Supabase Connection Error Banner */}
-      {supabaseError && (
-        <div className="supabase-error-banner">
-          <span>{supabaseError}</span>
-          <button onClick={() => setSupabaseError('')}>×</button>
+      {/* Configuration Warning Banner */}
+      {!supabaseConfigured && (
+        <div className="config-warning-banner">
+          <div className="warning-content">
+            <span>⚠️ Supabase not configured. Some features will be limited. </span>
+            <a href="#setup-instructions" className="setup-link">Click here for setup instructions</a>
+          </div>
+          <button onClick={() => setSupabaseConfigured(true)} className="close-warning">
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* Setup Instructions Modal */}
+      {!supabaseConfigured && (
+        <div id="setup-instructions" className="setup-modal">
+          <div className="setup-content">
+            <h2>Supabase Setup Required</h2>
+            <p>To enable all features, please set up Supabase:</p>
+            <ol>
+              <li>Go to <a href="https://supabase.com" target="_blank" rel="noopener noreferrer">supabase.com</a> and create a project</li>
+              <li>Get your URL and API key from Settings → API</li>
+              <li>Create a <code>.env</code> file in your project root:</li>
+            </ol>
+            <pre>
+{`VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
+            </pre>
+            <p>Replace the values with your actual Supabase credentials</p>
+            <button onClick={() => setSupabaseConfigured(true)}>Got it!</button>
+          </div>
+        </div>
+      )}
+
+      {/* Success Message */}
+      {authSuccess && (
+        <div className="auth-success-banner">
+          <div className="success-content">
+            <span>✅ {authSuccess}</span>
+          </div>
+          <button onClick={() => setAuthSuccess('')} className="close-success">
+            ×
+          </button>
         </div>
       )}
 
@@ -448,9 +839,7 @@ function App() {
       </a>
       
       <nav className={`navbar ${isMenuOpen ? 'menu-open' : ''}`}>
-        <div 
-          className={`nav-content ${isMenuOpen ? 'visible' : ''}`}
-        >
+        <div className={`nav-content ${isMenuOpen ? 'visible' : ''}`}>
           <input 
             type="text" 
             className="search-bar glassmorphism-input" 
@@ -466,9 +855,79 @@ function App() {
                 {link}
               </a>
             ))}
-            <a href="/login" className="btn btn-sage">
-              Professional Login <span className="notification-bubble">2</span>
-            </a>
+            
+            {/* User Authentication in Menu */}
+            {/* User Authentication in Menu: REPLACE the old section with this */}
+            {currentUser && !currentUser.anonymous ? (
+              <div className="user-menu" ref={userMenuRef}>
+                <button className="user-info-button" onClick={() => setIsUserMenuOpen(prev => !prev)}>
+                  {currentUser.avatar_url ? (
+                    <img src={currentUser.avatar_url} alt={currentUser.username} className="user-avatar" />
+                  ) : (
+                    <FaUserCircle className="user-avatar-placeholder" />
+                  )}
+                  <span className="user-welcome">Hi, {currentUser.username || currentUser.email.split('@')[0]}</span>
+                  {isUserMenuOpen ? <FaChevronUp /> : <FaChevronDown />}
+                </button>
+
+                {isUserMenuOpen && (
+                  <div className="user-dropdown-menu">
+                    <h3>Profile Settings</h3>
+                    <div className="form-group">
+                      <label htmlFor="username"><FaUser /> Username</label>
+                      <input
+                        type="text"
+                        id="username"
+                        name="username"
+                        value={authForm.username}
+                        onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
+                        placeholder="Your username"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label><FaImage /> Avatar</label>
+                      <div className="avatar-upload-container">
+                        {avatarPreview ? (
+                          <img src={avatarPreview} alt="Avatar preview" className="avatar-preview" />
+                        ) : (
+                          <div className="avatar-placeholder-large"><FaUserCircle /></div>
+                        )}
+                        <div className="avatar-actions">
+                          <input
+                            type="file"
+                            id="avatar-upload"
+                            onChange={handleAvatarSelect}
+                            accept="image/*"
+                            style={{ display: 'none' }}
+                          />
+                          <label htmlFor="avatar-upload" className="btn btn-sm btn-sage">Change</label>
+                          {avatarPreview && <button onClick={removeAvatar} className="btn-remove-avatar"><FaTimes /></button>}
+                        </div>
+                      </div>
+                    </div>
+                    <button className="btn btn-primary" onClick={handleUpdateProfile}>
+                      <FaSave /> Save Changes
+                    </button>
+                    <hr className="divider" />
+                    <button className="btn btn-danger" onClick={handleSignOut}>
+                      <FaSignOutAlt /> Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                className="btn btn-sage"
+                onClick={() => {
+                  setShowAuthModal(true);
+                  setAuthMode('login');
+                  setAuthError('');
+                  setAuthSuccess('');
+                }}
+              >
+                <FaSignInAlt /> Sign In
+              </button>
+            )}
           </div>
         </div>
 
@@ -794,13 +1253,188 @@ function App() {
         </section>
       </main>
 
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="settings-modal">
+          <div className="settings-content">
+            <button 
+              className="close-settings"
+              onClick={() => setShowSettings(false)}
+            >
+              <FaTimes />
+            </button>
+            
+            <h2>Customize Your Experience</h2>
+            
+            <div className="settings-section">
+              <h3><FaUser /> Profile Settings</h3>
+              <div className="input-group">
+                <FaUser className="input-icon" />
+                <input
+                  type="text"
+                  placeholder="Username"
+                  value={authForm.username || currentUser?.username || ''}
+                  onChange={(e) => setAuthForm({...authForm, username: e.target.value})}
+                />
+              </div>
+              
+              <div className="avatar-upload-section">
+                <label className="avatar-label">Profile Picture</label>
+                <div className="avatar-preview-container">
+                  {avatarPreview ? (
+                    <div className="avatar-preview">
+                      <img src={avatarPreview} alt="Avatar preview" />
+                      <button type="button" onClick={removeAvatar} className="remove-avatar">
+                        <FaTimes />
+                      </button>
+                    </div>
+                  ) : currentUser?.avatar_url ? (
+                    <div className="avatar-preview">
+                      <img src={currentUser.avatar_url} alt="Current avatar" />
+                    </div>
+                  ) : (
+                    <div className="avatar-placeholder">
+                      <FaUserCircle />
+                    </div>
+                  )}
+                </div>
+                <label htmlFor="avatar-upload-settings" className="avatar-upload-btn">
+                  <FaImage /> Change Image
+                </label>
+                <input
+                  id="avatar-upload-settings"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarSelect}
+                  style={{ display: 'none' }}
+                />
+              </div>
+              
+              <button 
+                className="btn btn-lavender"
+                onClick={handleUpdateProfile}
+              >
+                Update Profile
+              </button>
+            </div>
+            
+            <div className="settings-section">
+              <h3><FaPalette /> Appearance Settings</h3>
+              
+              <div className="preference-group">
+                <label>Primary Color</label>
+                <input
+                  type="color"
+                  value={tempPreferences.primaryColor}
+                  onChange={(e) => setTempPreferences({...tempPreferences, primaryColor: e.target.value})}
+                />
+              </div>
+              
+              <div className="preference-group">
+                <label>Secondary Color</label>
+                <input
+                  type="color"
+                  value={tempPreferences.secondaryColor}
+                  onChange={(e) => setTempPreferences({...tempPreferences, secondaryColor: e.target.value})}
+                />
+              </div>
+              
+              <div className="preference-group">
+                <label>Background Color</label>
+                <input
+                  type="color"
+                  value={tempPreferences.backgroundColor}
+                  onChange={(e) => setTempPreferences({...tempPreferences, backgroundColor: e.target.value})}
+                />
+              </div>
+              
+              <div className="preference-group">
+                <label>Text Color</label>
+                <input
+                  type="color"
+                  value={tempPreferences.textColor}
+                  onChange={(e) => setTempPreferences({...tempPreferences, textColor: e.target.value})}
+                />
+              </div>
+            </div>
+            
+            <div className="settings-section">
+              <h3><FaFont /> Typography Settings</h3>
+              
+              <div className="preference-group">
+                <label>Font Size</label>
+                <select
+                  value={tempPreferences.fontSize}
+                  onChange={(e) => setTempPreferences({...tempPreferences, fontSize: e.target.value})}
+                >
+                  <option value="14px">Small</option>
+                  <option value="16px">Medium</option>
+                  <option value="18px">Large</option>
+                  <option value="20px">X-Large</option>
+                </select>
+              </div>
+              
+              <div className="preference-group">
+                <label>Font Family</label>
+                <select
+                  value={tempPreferences.fontFamily}
+                  onChange={(e) => setTempPreferences({...tempPreferences, fontFamily: e.target.value})}
+                >
+                  <option value="system-ui, sans-serif">System UI</option>
+                  <option value="'Inter', sans-serif">Inter</option>
+                  <option value="'Roboto', sans-serif">Roboto</option>
+                  <option value="'Open Sans', sans-serif">Open Sans</option>
+                  <option value="'Georgia', serif">Georgia</option>
+                </select>
+              </div>
+              
+              <div className="preference-group">
+                <label>Border Radius</label>
+                <select
+                  value={tempPreferences.borderRadius}
+                  onChange={(e) => setTempPreferences({...tempPreferences, borderRadius: e.target.value})}
+                >
+                  <option value="0px">None</option>
+                  <option value="4px">Small</option>
+                  <option value="8px">Medium</option>
+                  <option value="12px">Large</option>
+                  <option value="16px">X-Large</option>
+                </select>
+              </div>
+            </div>
+            
+            <div className="settings-actions">
+              <button 
+                className="btn btn-sage"
+                onClick={handleSavePreferences}
+              >
+                <FaSave /> Save Preferences
+              </button>
+              
+              <button 
+                className="btn btn-secondary"
+                onClick={handleResetPreferences}
+              >
+                <FaUndo /> Reset to Default
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Auth Modal */}
       {showAuthModal && (
         <div className="auth-modal">
           <div className="auth-content">
             <button 
               className="close-auth"
-              onClick={() => setShowAuthModal(false)}
+              onClick={() => {
+                setShowAuthModal(false);
+                setAuthError('');
+                setAuthSuccess('');
+                setAvatarFile(null);
+                setAvatarPreview(null);
+              }}
             >
               <FaTimes />
             </button>
@@ -808,19 +1442,51 @@ function App() {
             <h2>{authMode === 'login' ? 'Sign In' : 'Create Account'}</h2>
             
             {authError && <div className="auth-error">{authError}</div>}
+            {authSuccess && <div className="auth-success">{authSuccess}</div>}
             
             <form onSubmit={handleAuth}>
               {authMode === 'register' && (
-                <div className="input-group">
-                  <FaUser className="input-icon" />
-                  <input
-                    type="text"
-                    placeholder="Username"
-                    value={authForm.username}
-                    onChange={(e) => setAuthForm({...authForm, username: e.target.value})}
-                    required
-                  />
-                </div>
+                <>
+                  <div className="input-group">
+                    <FaUser className="input-icon" />
+                    <input
+                      type="text"
+                      placeholder="Username"
+                      value={authForm.username}
+                      onChange={(e) => setAuthForm({...authForm, username: e.target.value})}
+                      required
+                    />
+                  </div>
+                  
+                  {/* Avatar Upload */}
+                  <div className="avatar-upload-section">
+                    <label className="avatar-label">Profile Picture (Optional)</label>
+                    <div className="avatar-preview-container">
+                      {avatarPreview ? (
+                        <div className="avatar-preview">
+                          <img src={avatarPreview} alt="Avatar preview" />
+                          <button type="button" onClick={removeAvatar} className="remove-avatar">
+                            <FaTimes />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="avatar-placeholder">
+                          <FaUserCircle />
+                        </div>
+                      )}
+                    </div>
+                    <label htmlFor="avatar-upload" className="avatar-upload-btn">
+                      <FaImage /> Choose Image
+                    </label>
+                    <input
+                      id="avatar-upload"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarSelect}
+                      style={{ display: 'none' }}
+                    />
+                  </div>
+                </>
               )}
               
               <div className="input-group">
@@ -842,6 +1508,7 @@ function App() {
                   value={authForm.password}
                   onChange={(e) => setAuthForm({...authForm, password: e.target.value})}
                   required
+                  minLength={6}
                 />
               </div>
               
@@ -854,6 +1521,7 @@ function App() {
                     value={authForm.confirmPassword}
                     onChange={(e) => setAuthForm({...authForm, confirmPassword: e.target.value})}
                     required
+                    minLength={6}
                   />
                 </div>
               )}
@@ -867,14 +1535,22 @@ function App() {
               {authMode === 'login' ? (
                 <p>
                   Don't have an account?{' '}
-                  <button onClick={() => setAuthMode('register')}>
+                  <button onClick={() => {
+                    setAuthMode('register');
+                    setAuthError('');
+                    setAuthSuccess('');
+                  }}>
                     Sign Up
                   </button>
                 </p>
               ) : (
                 <p>
                   Already have an account?{' '}
-                  <button onClick={() => setAuthMode('login')}>
+                  <button onClick={() => {
+                    setAuthMode('login');
+                    setAuthError('');
+                    setAuthSuccess('');
+                  }}>
                     Sign In
                   </button>
                 </p>
@@ -883,25 +1559,6 @@ function App() {
           </div>
         </div>
       )}
-
-      {/* User Auth Button */}
-      <div className="user-auth-container">
-        {currentUser && !currentUser.anonymous ? (
-          <button className="user-profile-btn" onClick={handleSignOut}>
-            <FaUser /> Sign Out
-          </button>
-        ) : (
-          <button 
-            className="user-auth-btn"
-            onClick={() => {
-              setShowAuthModal(true);
-              setAuthMode('login');
-            }}
-          >
-            <FaSignInAlt /> Sign In
-          </button>
-        )}
-      </div>
 
       {/* Chat Toggle Button */}
       <button 
@@ -930,6 +1587,15 @@ function App() {
                 key={message.id} 
                 className={`message ${message.user_id === currentUser?.id ? 'own-message' : ''}`}
               >
+                <div className="message-user">
+                  {message.user?.avatar_url ? (
+                    <img src={message.user.avatar_url} alt={message.user.username} className="message-avatar" />
+                  ) : (
+                    <FaUserCircle className="message-avatar-placeholder" />
+                  )}
+                  <span className="message-username">{message.user?.username || 'Anonymous'}</span>
+                </div>
+                
                 {message.image_url && (
                   <div className="message-image">
                     <img src={message.image_url} alt="Shared content" />
@@ -1028,7 +1694,6 @@ function App() {
     </div>
   );
 }
-
 
 // Medical Specialties Data with Professional Icons
 const medicalSpecialties = [
@@ -1206,49 +1871,6 @@ const medicalSpecialties = [
     color: '#DC2626',
     description: 'Operative treatment of injuries/diseases',
     cases: ['Minimally invasive surgery', 'Trauma surgery', 'Surgical oncology']
-  }
-];
-
-const features = [
-  {
-    icon: '🆘',
-    audience: 'For Everyone',
-    title: 'Emergency Alert',
-    description: 'Instant help request with GPS location',
-    color: 'red',
-    badgeColor: 'emergency-badge',
-    buttonText: 'Trigger Alert',
-    buttonColor: 'red'
-  },
-  {
-    icon: '📅',
-    audience: 'For Patients',
-    title: 'Book a Specialist',
-    description: 'Schedule paid appointments by specialty',
-    color: 'lavender',
-    badgeColor: 'patient-badge',
-    buttonText: 'Find Doctors',
-    buttonColor: 'lavender'
-  },
-  {
-    icon: '🎓',
-    audience: 'Students/Residents',
-    title: 'Learning Hub',
-    description: 'Access cases, quizzes, and mentor support',
-    color: 'sage',
-    badgeColor: 'student-badge',
-    buttonText: 'Start Learning',
-    buttonColor: 'sage'
-  },
-  {
-    icon: '💬',
-    audience: 'For Doctors',
-    title: 'Case Discussions',
-    description: 'Share knowledge and mentor trainees',
-    color: 'blue',
-    badgeColor: 'doctor-badge',
-    buttonText: 'Join Discussions',
-    buttonColor: 'blue'
   }
 ];
 
