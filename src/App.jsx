@@ -15,24 +15,33 @@ import { MdPsychology, MdEmergency, MdForum } from 'react-icons/md';
 import './specialty.css';
 import './index.css';
 
-// Initialize Supabase client with error handling
+// SINGLETON: Initialize Supabase client once
+let supabaseInstance = null;
+
 const getSupabaseClient = () => {
+    if (supabaseInstance) {
+        return supabaseInstance;
+    }
+
     try {
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
         const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-        // Check if environment variables are set
         if (!supabaseUrl || !supabaseKey ||
             supabaseUrl.includes('your-project-ref') ||
             supabaseKey.includes('your-anon-key-here')) {
             console.warn('Supabase not configured. Please set up your .env file');
-            return createMockClient();
+            supabaseInstance = createMockClient();
+            return supabaseInstance;
         }
 
-        return createClient(supabaseUrl, supabaseKey);
+        supabaseInstance = createClient(supabaseUrl, supabaseKey);
+        console.log('✅ Supabase client initialized (singleton)');
+        return supabaseInstance;
     } catch (error) {
         console.error('Error creating Supabase client:', error);
-        return createMockClient();
+        supabaseInstance = createMockClient();
+        return supabaseInstance;
     }
 };
 
@@ -72,7 +81,6 @@ const createMockClient = () => {
             },
             signOut: () => Promise.resolve({ error: null }),
             onAuthStateChange: (callback) => {
-                // Mock subscription
                 const subscription = {
                     unsubscribe: () => {}
                 };
@@ -86,13 +94,10 @@ const createMockClient = () => {
                 return Promise.resolve({ data: null, error: null });
             },
             update: () => Promise.resolve({ data: null, error: null }),
-            on: (event, callback) => ({
-                subscribe: () => {
-                    // Mock subscription that does nothing
-                    return {
-                        unsubscribe: () => {}
-                    };
-                }
+            on: () => ({
+                subscribe: () => ({
+                    unsubscribe: () => {}
+                })
             })
         }),
         channel: () => ({
@@ -160,11 +165,6 @@ function App() {
     const [avatarLoadError, setAvatarLoadError] = useState(false);
     const [avatarKey, setAvatarKey] = useState(Date.now());
 
-    // Add this effect to sync the ref with the state
-    useEffect(() => {
-        currentUserRef.current = currentUser;
-    }, [currentUser]);
-
     const [isUploading, setIsUploading] = useState(false);
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [authMode, setAuthMode] = useState('login');
@@ -185,14 +185,18 @@ function App() {
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
     const userMenuRef = useRef(null);
 
-    // Initialize cache buster on component mount
+    // FIX: Track initialization to prevent multiple setups
+    const authInitializedRef = useRef(false);
+    const authSubscriptionRef = useRef(null);
+
+    // Initialize cache buster
     useEffect(() => {
         if (!sessionStorage.getItem('avatar_cache_buster')) {
             sessionStorage.setItem('avatar_cache_buster', Date.now().toString());
         }
     }, []);
 
-    // Apply user preferences to the document
+    // Apply user preferences
     useEffect(() => {
         const root = document.documentElement;
         root.style.setProperty('--primary-color', userPreferences.primaryColor);
@@ -204,17 +208,15 @@ function App() {
         root.style.setProperty('--border-radius', userPreferences.borderRadius);
     }, [userPreferences]);
 
-    // Improved useEffect to populate profile settings with better username handling
+    // Sync auth form with user data
     useEffect(() => {
         if (currentUser && !currentUser.anonymous) {
             console.log('🔄 Setting auth form with user data:', {
                 username: currentUser.username,
                 email: currentUser.email,
-                avatar_url: currentUser.avatar_url,
-                user_metadata: currentUser.user_metadata
+                avatar_url: currentUser.avatar_url
             });
 
-            // Use the actual username from the database, not from user_metadata
             const displayUsername = currentUser.username ||
                 currentUser.user_metadata?.username ||
                 currentUser.email?.split('@')[0] ||
@@ -226,21 +228,17 @@ function App() {
                 email: currentUser.email || ''
             }));
 
-            // Reset avatar load error when user changes
             setAvatarLoadError(false);
-
             console.log('✅ Auth form set with username:', displayUsername);
         }
     }, [currentUser]);
 
-    // Effect to handle avatar URL changes and force re-renders
+    // Handle avatar URL changes
     useEffect(() => {
         if (currentUser?.avatar_url) {
             console.log('🎯 Avatar URL changed, forcing refresh:', currentUser.avatar_url);
             setAvatarKey(Date.now());
             setAvatarLoadError(false);
-
-            // Set avatar preview with cache busting
             const cacheBustedUrl = getCacheBustedUrl(currentUser.avatar_url);
             setAvatarPreview(cacheBustedUrl);
         } else {
@@ -248,7 +246,7 @@ function App() {
         }
     }, [currentUser?.avatar_url]);
 
-    // Handle closing the dropdown when clicking outside
+    // Handle closing dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
@@ -261,7 +259,7 @@ function App() {
         };
     }, []);
 
-    // Load user preferences from localStorage
+    // Load user preferences
     useEffect(() => {
         const savedPreferences = localStorage.getItem('userPreferences');
         if (savedPreferences) {
@@ -275,7 +273,7 @@ function App() {
         }
     }, []);
 
-    // Check if Supabase is properly configured
+    // Check Supabase configuration
     useEffect(() => {
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
         const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -288,16 +286,17 @@ function App() {
         }
     }, []);
 
+    // Scroll handler
     useEffect(() => {
         const handleScroll = () => {
             const bottom = Math.ceil(window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 50;
             setIsBottom(bottom);
         };
-
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
 
+    // Intersection Observer
     useEffect(() => {
         const observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
@@ -309,60 +308,87 @@ function App() {
                 }
             });
         }, { threshold: 0.1 });
-
         document.querySelectorAll('.hidden').forEach((el) => observer.observe(el));
         return () => observer.disconnect();
     }, []);
 
-    // Improved authentication state management with better profile synchronization
+    // FIXED: Single authentication initialization
     useEffect(() => {
+        // Prevent multiple initializations
+        if (authInitializedRef.current) {
+            console.log('🚫 Auth already initialized, skipping...');
+            return;
+        }
+
+        authInitializedRef.current = true;
         let mounted = true;
 
-        const getSession = async () => {
+        console.log('🔐 INITIALIZING AUTHENTICATION (SINGLE TIME)...');
+
+        const initializeAuth = async () => {
             if (!mounted) return;
 
             try {
                 const { data: { session }, error } = await supabase.auth.getSession();
+
                 if (error) {
                     console.error('Error getting session:', error);
-                    createAnonymousUser();
+                    if (mounted) createAnonymousUser();
                     return;
                 }
 
                 if (session?.user) {
-                    console.log('👤 User session found:', session.user);
-                    // Set basic user first, then fetch full profile
-                    setCurrentUser(session.user);
+                    console.log('👤 User session found:', session.user.id);
+                    // Set basic user first
+                    const basicUser = {
+                        ...session.user,
+                        username: session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'user'
+                    };
+
+                    if (mounted) {
+                        setCurrentUser(basicUser);
+                    }
+
+                    // Then fetch complete profile
                     await fetchUserProfile(session.user.id);
                 } else {
                     console.log('No session found, creating anonymous user');
-                    createAnonymousUser();
+                    if (mounted) createAnonymousUser();
                 }
             } catch (error) {
-                console.error('Error in getSession:', error);
-                createAnonymousUser();
+                console.error('Error in auth initialization:', error);
+                if (mounted) createAnonymousUser();
             }
         };
 
-        getSession();
+        initializeAuth();
 
+        // Set up auth state change listener - ONLY ONCE
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (event, session) => {
                 if (!mounted) return;
 
-                console.log('🔄 Auth state changed:', event, session);
+                console.log('🔄 Auth state changed:', event);
+
                 try {
                     if (event === 'SIGNED_IN' && session) {
-                        console.log('✅ User signed in:', session.user);
-                        setCurrentUser(session.user);
+                        console.log('✅ User signed in:', session.user.id);
+
+                        // Set basic user first
+                        const basicUser = {
+                            ...session.user,
+                            username: session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'user'
+                        };
+                        setCurrentUser(basicUser);
+
+                        // Then fetch complete profile
                         await fetchUserProfile(session.user.id);
                     } else if (event === 'SIGNED_OUT') {
                         console.log('🚪 User signed out');
                         setCurrentUser(null);
                         createAnonymousUser();
                     } else if (event === 'USER_UPDATED' && session) {
-                        console.log('📝 User updated:', session.user);
-                        setCurrentUser(session.user);
+                        console.log('📝 User updated, refreshing profile...');
                         await fetchUserProfile(session.user.id);
                     }
                 } catch (error) {
@@ -371,17 +397,22 @@ function App() {
             }
         );
 
-        return () => {
-            mounted = false;
-            subscription.unsubscribe();
-        };
-    }, []);
+        authSubscriptionRef.current = subscription;
 
+        return () => {
+            console.log('🧹 Cleaning up auth subscription');
+            mounted = false;
+            if (authSubscriptionRef.current) {
+                authSubscriptionRef.current.unsubscribe();
+            }
+        };
+    }, []); // Empty dependency array - run only once
+
+    // Messages subscription
     useEffect(() => {
         if (currentUser && !currentUser.anonymous) {
             fetchMessages();
 
-            // Use the correct real-time subscription method
             try {
                 const subscription = supabase
                     .channel('messages')
@@ -411,7 +442,7 @@ function App() {
         setCurrentUser({ id: userId, anonymous: true });
     };
 
-    // Improved user profile fetching with better username persistence
+    // FIXED: User profile fetching
     const fetchUserProfile = async (userId) => {
         try {
             console.log('🔄 Fetching user profile for:', userId);
@@ -424,53 +455,69 @@ function App() {
 
             if (error) {
                 console.error('❌ Error fetching user profile:', error);
-                // If user doesn't exist in the users table, create a profile
                 if (error.code === 'PGRST116') {
                     console.log('User profile not found, creating new profile...');
                     await createUserProfile(userId);
+                    return await fetchUserProfile(userId);
                 }
+                return null;
             } else if (data) {
                 console.log('✅ User profile fetched:', data);
 
-                // Get the auth user data to merge
-                const { data: { user: authUser } } = await supabase.auth.getUser();
+                // Get current auth session
+                const { data: { session } } = await supabase.auth.getSession();
+                const authUser = session?.user;
 
-                // Update current user with profile data - prioritize database username
-                setCurrentUser(prev => ({
-                    ...prev,
+                // Create complete user object
+                const completeUser = {
+                    ...authUser,
                     ...data,
-                    // Use database username first, then fallback to auth metadata
-                    username: data.username || prev?.user_metadata?.username || authUser?.user_metadata?.username || prev?.email?.split('@')[0] || 'user',
-                    email: data.email || prev?.email,
-                    avatar_url: data.avatar_url || prev?.avatar_url
-                }));
+                    id: userId,
+                    username: data.username ||
+                        authUser?.user_metadata?.username ||
+                        authUser?.email?.split('@')[0] ||
+                        'user',
+                    email: data.email || authUser?.email,
+                    avatar_url: data.avatar_url, // CRITICAL: Use database avatar_url
+                    user_metadata: authUser?.user_metadata
+                };
 
-                // Update auth form with current data - use database username
-                const displayUsername = data.username || authUser?.user_metadata?.username || authUser?.email?.split('@')[0] || '';
+                console.log('👤 Complete user object created:', {
+                    id: completeUser.id,
+                    username: completeUser.username,
+                    email: completeUser.email,
+                    avatar_url: completeUser.avatar_url
+                });
 
+                // Update current user state
+                setCurrentUser(completeUser);
+
+                // Update auth form
                 setAuthForm(prev => ({
                     ...prev,
-                    username: displayUsername,
-                    email: data.email || authUser?.email || ''
+                    username: completeUser.username || '',
+                    email: completeUser.email || ''
                 }));
 
-                console.log('✅ Profile loaded - Username:', displayUsername, 'Avatar:', data.avatar_url);
+                console.log('✅ Profile fully loaded - Username:', completeUser.username, 'Avatar:', completeUser.avatar_url);
+                return completeUser;
             }
         } catch (error) {
             console.error('❌ Error in fetchUserProfile:', error);
+            return null;
         }
     };
 
     const createUserProfile = async (userId) => {
         try {
-            const { data: { user }, error: authError } = await supabase.auth.getUser();
+            const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
             if (authError) {
                 console.error('Error getting user:', authError);
                 return;
             }
 
-            const username = user?.user_metadata?.username || user?.email?.split('@')[0] || 'user';
+            const username = authUser?.user_metadata?.username || authUser?.email?.split('@')[0] || 'user';
 
             const { error } = await supabase
                 .from('users')
@@ -478,7 +525,7 @@ function App() {
                     {
                         id: userId,
                         username: username,
-                        email: user?.email,
+                        email: authUser?.email,
                         avatar_url: null,
                         preferences: defaultPreferences,
                         created_at: new Date().toISOString()
@@ -489,7 +536,6 @@ function App() {
                 console.error('Error creating user profile:', error);
             } else {
                 console.log('✅ User profile created with username:', username);
-                // Refetch the user profile
                 await fetchUserProfile(userId);
             }
         } catch (error) {
@@ -517,6 +563,15 @@ function App() {
         }
     };
 
+    // Force refresh user data
+    const refreshUserData = async () => {
+        if (currentUser && !currentUser.anonymous) {
+            console.log('🔄 Manually refreshing user data...');
+            await fetchUserProfile(currentUser.id);
+        }
+    };
+
+    // Rest of your functions remain the same...
     const handleEmergencyClick = async () => {
         try {
             const position = await new Promise((resolve, reject) => {
@@ -574,21 +629,18 @@ function App() {
         setAvatarLoadError(false);
     };
 
-    // Force refresh avatar
     const forceRefreshAvatar = () => {
         console.log('🔄 Force refreshing avatar...');
         setAvatarKey(Date.now());
         setAvatarLoadError(false);
-        // Update cache buster
         sessionStorage.setItem('avatar_cache_buster', Date.now().toString());
-
         if (currentUser?.avatar_url) {
             const newUrl = getCacheBustedUrl(currentUser.avatar_url);
             setAvatarPreview(newUrl);
         }
     };
 
-    // Authentication handler with improved registration and profile creation
+    // Authentication handler
     const handleAuth = async (e) => {
         e.preventDefault();
         setAuthError('');
@@ -626,7 +678,6 @@ function App() {
                 } else if (data.user) {
                     console.log('✅ USER CREATED:', data.user);
 
-                    // IMPORTANT: Create user profile immediately with the provided username
                     try {
                         const { error: profileError } = await supabase
                             .from('users')
@@ -643,7 +694,6 @@ function App() {
 
                         if (profileError) {
                             console.error('❌ Profile creation failed:', profileError);
-                            // If profile creation fails, still show success but warn user
                             setAuthSuccess('Account created! Please sign in to complete profile setup.');
                         } else {
                             console.log('✅ User profile created with username:', authForm.username);
@@ -667,7 +717,6 @@ function App() {
                 setAuthError('Authentication service unavailable. Please try again later.');
             }
         } else {
-            // Login logic
             try {
                 const { data, error } = await supabase.auth.signInWithPassword({
                     email: authForm.email,
@@ -680,8 +729,6 @@ function App() {
                     setShowAuthModal(false);
                     setAuthForm({ username: '', email: '', password: '', confirmPassword: '' });
                     setAuthSuccess('Login successful!');
-
-                    // Clear success message after 3 seconds
                     setTimeout(() => {
                         setAuthSuccess('');
                     }, 3000);
@@ -700,13 +747,10 @@ function App() {
                 console.error('Error signing out:', error.message);
                 setAuthError('Error signing out: ' + error.message);
             } else {
-                // Clear all user-related state
                 setCurrentUser(null);
                 setIsUserMenuOpen(false);
                 setAuthSuccess('You have been signed out successfully.');
                 createAnonymousUser();
-
-                // Clear success message after 3 seconds
                 setTimeout(() => {
                     setAuthSuccess('');
                 }, 3000);
@@ -808,11 +852,9 @@ function App() {
     };
 
     const handleSavePreferences = async () => {
-        // Save to localStorage
         localStorage.setItem('userPreferences', JSON.stringify(tempPreferences));
         setUserPreferences(tempPreferences);
 
-        // If user is logged in, save to database
         if (currentUser && !currentUser.anonymous) {
             try {
                 const { error } = await supabase
@@ -838,15 +880,14 @@ function App() {
         setTempPreferences(defaultPreferences);
     };
 
-    // NEW: Simplified and fixed avatar upload function
-// NEW: Completely rewritten avatar upload function
+    // Avatar upload function
     const handleUpdateProfile = async () => {
         if (!currentUser || currentUser.anonymous) {
             setAuthError('You must be logged in to update your profile');
             return;
         }
 
-        console.log('🚀 Starting SIMPLIFIED profile update for user:', currentUser.id);
+        console.log('🚀 Starting profile update for user:', currentUser.id);
 
         try {
             setAuthError('');
@@ -855,32 +896,27 @@ function App() {
             const updateData = {};
             let hasChanges = false;
 
-            // Handle username change
             if (authForm.username && authForm.username.trim() && authForm.username !== currentUser.username) {
                 updateData.username = authForm.username.trim();
                 hasChanges = true;
                 console.log('📝 Username will be updated');
             }
 
-            // Handle avatar upload - SIMPLIFIED APPROACH
             if (avatarFile) {
-                console.log('📤 Starting SIMPLIFIED avatar upload...');
+                console.log('📤 Starting avatar upload...');
 
                 try {
-                    // Generate unique filename
                     const fileExt = avatarFile.name.split('.').pop();
                     const fileName = `avatar-${currentUser.id}-${Date.now()}.${fileExt}`;
 
                     console.log('📁 Uploading:', fileName, 'Size:', avatarFile.size);
 
-                    // SIMPLE UPLOAD - no complex options
                     const { data: uploadData, error: uploadError } = await supabase.storage
                         .from('avatars')
                         .upload(fileName, avatarFile);
 
                     if (uploadError) {
                         console.error('❌ UPLOAD FAILED:', uploadError);
-
                         if (uploadError.message?.includes('bucket')) {
                             setAuthError('Storage bucket "avatars" not found. Create it in Supabase Dashboard -> Storage.');
                         } else if (uploadError.message?.includes('policy') || uploadError.message?.includes('permission')) {
@@ -896,7 +932,6 @@ function App() {
 
                     console.log('✅ Upload successful:', uploadData);
 
-                    // Get public URL
                     const { data: urlData } = supabase.storage
                         .from('avatars')
                         .getPublicUrl(fileName);
@@ -915,7 +950,6 @@ function App() {
                 }
             }
 
-            // Update database if we have changes
             if (hasChanges) {
                 console.log('💾 Updating user profile...');
 
@@ -935,13 +969,19 @@ function App() {
 
                 console.log('✅ Profile updated:', data);
 
-                // Update local state
+                // Update local state and force refresh
                 setCurrentUser(prev => ({
                     ...prev,
-                    ...data
+                    ...data,
+                    username: data.username || prev.username,
+                    avatar_url: data.avatar_url
                 }));
 
-                // Refresh avatar display
+                // Force refresh user data
+                setTimeout(() => {
+                    fetchUserProfile(currentUser.id);
+                }, 100);
+
                 setAvatarKey(Date.now());
                 setAvatarLoadError(false);
                 setAvatarFile(null);
@@ -966,7 +1006,7 @@ function App() {
             setIsUploading(false);
         }
     };
-    // Add this debug function to test storage
+
     const debugStorage = async () => {
         if (!currentUser) {
             alert('Please log in first');
@@ -976,19 +1016,16 @@ function App() {
         console.log('🔍 DEBUGGING STORAGE...');
 
         try {
-            // Test 1: Check if we can list buckets
             console.log('1. Testing bucket access...');
             const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
             console.log('Buckets:', buckets);
             console.log('Buckets error:', bucketsError);
 
-            // Test 2: Check if avatars bucket exists and list files
             console.log('2. Testing avatars bucket...');
             const { data: files, error: filesError } = await supabase.storage.from('avatars').list();
             console.log('Files in avatars:', files);
             console.log('Files error:', filesError);
 
-            // Test 3: Try a simple upload
             console.log('3. Testing simple upload...');
             const testBlob = new Blob(['test content'], { type: 'text/plain' });
             const testFile = new File([testBlob], `test-${currentUser.id}.txt`);
@@ -1001,7 +1038,6 @@ function App() {
             console.log('Test upload error:', uploadError);
 
             if (!uploadError) {
-                // Clean up test file
                 await supabase.storage.from('avatars').remove([testFile.name]);
                 console.log('✅ Storage test PASSED');
                 alert('Storage is working correctly!');
@@ -1016,7 +1052,6 @@ function App() {
         }
     };
 
-    // Get display username for UI
     const getDisplayUsername = () => {
         if (!currentUser) return 'User';
         return currentUser.username ||
@@ -1025,25 +1060,21 @@ function App() {
             'User';
     };
 
-    // Get avatar URL with cache busting
     const getAvatarUrl = () => {
         if (!currentUser?.avatar_url) return null;
         return getCacheBustedUrl(currentUser.avatar_url);
     };
 
-    // Handle avatar image load error
     const handleAvatarError = () => {
         console.log('❌ Avatar image failed to load:', currentUser?.avatar_url);
         setAvatarLoadError(true);
     };
 
-    // Handle avatar image load success
     const handleAvatarLoad = () => {
         console.log('✅ Avatar image loaded successfully');
         setAvatarLoadError(false);
     };
 
-    // NEW: Setup storage function
     const setupStoragePolicies = async () => {
         if (!currentUser) {
             setAuthError('Please log in first to set up storage');
@@ -1054,7 +1085,6 @@ function App() {
         setAuthError('');
 
         try {
-            // Test if we can create the bucket by trying to upload a small test file
             const testBlob = new Blob(['test'], { type: 'text/plain' });
             const testFile = new File([testBlob], `test-${currentUser.id}.txt`);
 
@@ -1068,7 +1098,6 @@ function App() {
                 setAuthError('Storage policies are not set. Please run the storage setup SQL in Supabase SQL Editor.');
             } else {
                 setAuthSuccess('Storage appears to be working! You can now upload avatars.');
-                // Clean up test file
                 await supabase.storage.from('avatars').remove([testFile.name]);
             }
         } catch (error) {
@@ -1103,8 +1132,29 @@ function App() {
         );
     };
 
+    // Your JSX remains exactly the same...
     return (
         <div className="app">
+            {/* Debug Component */}
+            <div style={{
+                position: 'fixed',
+                bottom: '800px',
+                right: '10px',
+                background: 'rgba(0,0,0,0.8)',
+                color: 'white',
+                padding: '10px',
+                fontSize: '12px',
+                zIndex: 10000,
+                borderRadius: '8px'
+            }}>
+                <div>User: {currentUser ? getDisplayUsername() : 'None'}</div>
+                <div>Avatar: {currentUser?.avatar_url ? 'Yes' : 'No'}</div>
+                <div>Anonymous: {currentUser?.anonymous ? 'Yes' : 'No'}</div>
+                <button onClick={refreshUserData} style={{ fontSize: '10px', marginTop: '5px' }}>
+                    Refresh
+                </button>
+            </div>
+
             {/* Configuration Warning Banner */}
             {!supabaseConfigured && (
                 <div className="config-warning-banner">
