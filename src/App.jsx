@@ -653,6 +653,7 @@ function App() {
     };
 
     // Updated emergency click handler with Census Bureau Geocoder
+// Updated emergency click handler to include coordinates in both popup and messages
     const handleEmergencyClick = async () => {
         try {
             const position = await new Promise((resolve, reject) => {
@@ -665,15 +666,19 @@ function App() {
                 accuracy: position.coords.accuracy
             };
 
-            // Get exact street address from coordinates using Census Bureau Geocoder
+            // Get exact street address from coordinates
             const locationText = await getLocationTextFromCoords(location.latitude, location.longitude);
+
+            // Create message text that includes both address and coordinates
+            const coordinatesText = `Coordinates: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
+            const fullLocationText = `${locationText} (${coordinatesText})`;
 
             const { error } = await supabase
                 .from('messages')
                 .insert([
                     {
                         user_id: currentUser.id,
-                        text: `🚨 EMERGENCY ALERT - Need immediate medical assistance! Location: ${locationText}`,
+                        text: `🚨 EMERGENCY ALERT - Need immediate medical assistance! Location: ${fullLocationText}`,
                         location: {
                             ...location,
                             text: locationText // Add location text to location object
@@ -684,9 +689,9 @@ function App() {
 
             if (error) {
                 console.error('Error sending emergency alert:', error);
-                alert(`🚨 Emergency alert sent locally! Exact location: ${locationText}`);
+                alert(`🚨 Emergency alert sent locally! Exact location: ${fullLocationText}`);
             } else {
-                alert(`🚨 Emergency alert sent! Exact location: ${locationText}\nCoordinates: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`);
+                alert(`🚨 Emergency alert sent! Exact location: ${fullLocationText}`);
             }
         } catch (error) {
             console.error('Error getting location:', error);
@@ -849,6 +854,7 @@ function App() {
     };
 
     // Updated send message handler with Census Bureau Geocoder
+// Updated send message handler to include coordinates in messages
     const handleSendMessage = async () => {
         if (!newMessage.trim() && !selectedImage) return;
 
@@ -904,7 +910,12 @@ function App() {
 
             // Get exact street address for regular messages too
             locationText = await getLocationTextFromCoords(location.latitude, location.longitude);
-            location.text = locationText; // Add location text to location object
+
+            // Add coordinates to the location text for regular messages
+            const coordinatesText = `Coordinates: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
+            const fullLocationText = `${locationText} (${coordinatesText})`;
+
+            location.text = fullLocationText; // Add full location text to location object
 
         } catch (error) {
             console.log('Location access not available or denied');
@@ -2100,6 +2111,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
                         </button>
                     </div>
                     <div className="messages-container">
+                        // In the chat messages section, update the location display:
                         {messages.map((message) => (
                             <div
                                 key={message.id}
@@ -2119,18 +2131,35 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
                                         <img src={message.image_url} alt="Shared content" />
                                     </div>
                                 )}
-                                {message.text && <p>{message.text}</p>}
+                                {message.text && <p className="message-text">{message.text}</p>}
                                 {message.location && (
-                                    <div className="message-location">
-                                        <FaMapMarkerAlt />
-                                        <span>
-                                            {message.location.text || `Location: ${message.location.latitude?.toFixed(6)}, ${message.location.longitude?.toFixed(6)}`}
-                                        </span>
+                                    <div className={`message-location-container ${message.text?.includes('🚨 EMERGENCY ALERT') ? 'emergency-location' : ''}`}>
+
+                                    <div className="message-location-header">
+                                            <FaMapMarkerAlt className="location-icon" />
+                                            <span className="location-title">Location Shared</span>
+                                        </div>
+                                        <div className="location-details">
+                                            <div className="location-address">
+                                                {message.location.text?.split(' (')[0] || 'Address not available'}
+                                            </div>
+                                            <div className="location-coordinates">
+                                                {message.location.text?.includes('Coordinates:')
+                                                    ? message.location.text.match(/Coordinates: [^)]+/)[0]
+                                                    : `Coordinates: ${message.location.latitude?.toFixed(6)}, ${message.location.longitude?.toFixed(6)}`
+                                                }
+                                            </div>
+                                        </div>
+                                        {message.location.accuracy && (
+                                            <div className="location-accuracy">
+                                                Accuracy: ±{Math.round(message.location.accuracy)} meters
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                                 <span className="message-time">
-                                    {new Date(message.created_at).toLocaleTimeString()}
-                                </span>
+            {new Date(message.created_at).toLocaleTimeString()}
+        </span>
                             </div>
                         ))}
                     </div>
