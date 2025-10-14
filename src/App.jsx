@@ -148,6 +148,87 @@ const getCacheBustedUrl = (url) => {
     return `${url}?t=${sessionTimestamp}`;
 };
 
+// Function to get exact street address from coordinates using U.S. Census Bureau Geocoder
+// Function to get exact street address from coordinates using OpenStreetMap Nominatim
+const getLocationTextFromCoords = async (latitude, longitude) => {
+    try {
+        // OpenStreetMap Nominatim API - more reliable for reverse geocoding
+        const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`
+        );
+        const data = await response.json();
+
+        console.log('OpenStreetMap Nominatim Response:', data);
+
+        if (data && data.address) {
+            const address = data.address;
+
+            // Build address from most specific to least specific
+            let addressParts = [];
+
+            // Street level
+            if (address.road) {
+                if (address.house_number) {
+                    addressParts.push(`${address.house_number} ${address.road}`);
+                } else {
+                    addressParts.push(address.road);
+                }
+            }
+
+            // City/town level
+            if (address.city) {
+                addressParts.push(address.city);
+            } else if (address.town) {
+                addressParts.push(address.town);
+            } else if (address.village) {
+                addressParts.push(address.village);
+            } else if (address.municipality) {
+                addressParts.push(address.municipality);
+            }
+
+            // State level
+            if (address.state) {
+                addressParts.push(address.state);
+            }
+
+            // Country level (as fallback)
+            if (address.country && addressParts.length === 0) {
+                addressParts.push(address.country);
+            }
+
+            if (addressParts.length > 0) {
+                const fullAddress = addressParts.join(', ');
+                console.log('Full address from OpenStreetMap:', fullAddress);
+                return fullAddress;
+            }
+        }
+
+        // Fallback: Use coordinates if no address found
+        console.log('No address found, using coordinates');
+        return `Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+    } catch (error) {
+        console.error('Error getting location text from OpenStreetMap:', error);
+
+        // Final fallback: Try a simpler approach with just city/state
+        try {
+            const simpleResponse = await fetch(
+                `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
+            );
+            const simpleData = await simpleResponse.json();
+
+            if (simpleData && simpleData.city && simpleData.countryName) {
+                return `${simpleData.city}, ${simpleData.countryName}`;
+            } else if (simpleData && simpleData.locality) {
+                return simpleData.locality;
+            }
+        } catch (fallbackError) {
+            console.error('Fallback geocoding also failed:', fallbackError);
+        }
+
+        return `Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+    }
+};
+
 function App() {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isBottom, setIsBottom] = useState(false);
@@ -571,7 +652,7 @@ function App() {
         }
     };
 
-    // Rest of your functions remain the same...
+    // Updated emergency click handler with Census Bureau Geocoder
     const handleEmergencyClick = async () => {
         try {
             const position = await new Promise((resolve, reject) => {
@@ -584,22 +665,28 @@ function App() {
                 accuracy: position.coords.accuracy
             };
 
+            // Get exact street address from coordinates using Census Bureau Geocoder
+            const locationText = await getLocationTextFromCoords(location.latitude, location.longitude);
+
             const { error } = await supabase
                 .from('messages')
                 .insert([
                     {
                         user_id: currentUser.id,
-                        text: 'EMERGENCY ALERT - Need immediate assistance!',
-                        location: location,
+                        text: `🚨 EMERGENCY ALERT - Need immediate medical assistance! Location: ${locationText}`,
+                        location: {
+                            ...location,
+                            text: locationText // Add location text to location object
+                        },
                         created_at: new Date().toISOString()
                     }
                 ]);
 
             if (error) {
                 console.error('Error sending emergency alert:', error);
-                alert('Emergency alert sent locally!');
+                alert(`🚨 Emergency alert sent locally! Exact location: ${locationText}`);
             } else {
-                alert(`Emergency alert sent! Location: ${location.latitude}, ${location.longitude}`);
+                alert(`🚨 Emergency alert sent! Exact location: ${locationText}\nCoordinates: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`);
             }
         } catch (error) {
             console.error('Error getting location:', error);
@@ -761,6 +848,7 @@ function App() {
         }
     };
 
+    // Updated send message handler with Census Bureau Geocoder
     const handleSendMessage = async () => {
         if (!newMessage.trim() && !selectedImage) return;
 
@@ -799,6 +887,8 @@ function App() {
         }
 
         let location = null;
+        let locationText = 'Location not available';
+
         try {
             const position = await new Promise((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -806,10 +896,16 @@ function App() {
                     maximumAge: 60000
                 });
             });
+
             location = {
                 latitude: position.coords.latitude,
                 longitude: position.coords.longitude
             };
+
+            // Get exact street address for regular messages too
+            locationText = await getLocationTextFromCoords(location.latitude, location.longitude);
+            location.text = locationText; // Add location text to location object
+
         } catch (error) {
             console.log('Location access not available or denied');
         }
@@ -2027,7 +2123,9 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
                                 {message.location && (
                                     <div className="message-location">
                                         <FaMapMarkerAlt />
-                                        <span>Location shared</span>
+                                        <span>
+                                            {message.location.text || `Location: ${message.location.latitude?.toFixed(6)}, ${message.location.longitude?.toFixed(6)}`}
+                                        </span>
                                     </div>
                                 )}
                                 <span className="message-time">
