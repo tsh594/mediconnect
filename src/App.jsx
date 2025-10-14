@@ -7,7 +7,7 @@ import {
     FaEye, FaAllergies, FaSyringe, FaSearch, FaBookOpen, FaComments, FaStar,
     FaChevronDown, FaChevronUp, FaPaperPlane, FaImage, FaTimes, FaUser, FaEnvelope,
     FaLock, FaMapMarkerAlt, FaSignInAlt, FaSignOutAlt, FaUserCircle, FaCog,
-    FaPalette, FaFont, FaSave, FaUndo
+    FaPalette, FaFont, FaSave, FaUndo, FaSearchPlus, FaSearchMinus
 } from 'react-icons/fa';
 import { FaCut, FaUserAlt, FaRegUser, FaHeadSideCough } from 'react-icons/fa';
 import { GiKidneys, GiLungs, GiSpiderWeb, GiStomach } from 'react-icons/gi';
@@ -148,7 +148,6 @@ const getCacheBustedUrl = (url) => {
     return `${url}?t=${sessionTimestamp}`;
 };
 
-// Function to get exact street address from coordinates using U.S. Census Bureau Geocoder
 // Function to get exact street address from coordinates using OpenStreetMap Nominatim
 const getLocationTextFromCoords = async (latitude, longitude) => {
     try {
@@ -242,6 +241,13 @@ function App() {
     const [currentUser, setCurrentUser] = useState(null);
     const currentUserRef = useRef(currentUser);
 
+    // Image enlargement states
+    const [enlargedImage, setEnlargedImage] = useState(null);
+    const [imageZoom, setImageZoom] = useState(1);
+    const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
     // Avatar loading state
     const [avatarLoadError, setAvatarLoadError] = useState(false);
     const [avatarKey, setAvatarKey] = useState(Date.now());
@@ -269,6 +275,48 @@ function App() {
     // FIX: Track initialization to prevent multiple setups
     const authInitializedRef = useRef(false);
     const authSubscriptionRef = useRef(null);
+
+    // Image enlargement functions
+    const handleImageClick = (imageUrl) => {
+        setEnlargedImage(imageUrl);
+        setImageZoom(1);
+        setImagePosition({ x: 0, y: 0 });
+    };
+
+    const closeEnlargedImage = () => {
+        setEnlargedImage(null);
+        setImageZoom(1);
+        setImagePosition({ x: 0, y: 0 });
+    };
+
+    const handleImageWheel = (e) => {
+        e.preventDefault();
+        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+        setImageZoom(prev => Math.max(0.5, Math.min(3, prev * zoomFactor)));
+    };
+
+    const handleImageMouseDown = (e) => {
+        if (imageZoom > 1) {
+            setIsDragging(true);
+            setDragStart({
+                x: e.clientX - imagePosition.x,
+                y: e.clientY - imagePosition.y
+            });
+        }
+    };
+
+    const handleImageMouseMove = (e) => {
+        if (isDragging) {
+            setImagePosition({
+                x: e.clientX - dragStart.x,
+                y: e.clientY - dragStart.y
+            });
+        }
+    };
+
+    const handleImageMouseUp = () => {
+        setIsDragging(false);
+    };
 
     // Initialize cache buster
     useEffect(() => {
@@ -652,8 +700,7 @@ function App() {
         }
     };
 
-    // Updated emergency click handler with Census Bureau Geocoder
-// Updated emergency click handler to include coordinates in both popup and messages
+    // Updated emergency click handler to include coordinates in both popup and messages
     const handleEmergencyClick = async () => {
         try {
             const position = await new Promise((resolve, reject) => {
@@ -853,8 +900,7 @@ function App() {
         }
     };
 
-    // Updated send message handler with Census Bureau Geocoder
-// Updated send message handler to include coordinates in messages
+    // Updated send message handler to include coordinates in messages
     const handleSendMessage = async () => {
         if (!newMessage.trim() && !selectedImage) return;
 
@@ -2111,7 +2157,6 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
                         </button>
                     </div>
                     <div className="messages-container">
-                        // In the chat messages section, update the location display:
                         {messages.map((message) => (
                             <div
                                 key={message.id}
@@ -2127,15 +2172,23 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
                                 </div>
 
                                 {message.image_url && (
-                                    <div className="message-image">
-                                        <img src={message.image_url} alt="Shared content" />
+                                    <div className="message-image-container">
+                                        <div
+                                            className="message-image clickable-image"
+                                            onClick={() => handleImageClick(message.image_url)}
+                                        >
+                                            <img src={message.image_url} alt="Shared content" />
+                                            <div className="image-overlay">
+                                                <FaImage className="enlarge-icon" />
+                                                <span>Click to enlarge</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
                                 {message.text && <p className="message-text">{message.text}</p>}
                                 {message.location && (
                                     <div className={`message-location-container ${message.text?.includes('🚨 EMERGENCY ALERT') ? 'emergency-location' : ''}`}>
-
-                                    <div className="message-location-header">
+                                        <div className="message-location-header">
                                             <FaMapMarkerAlt className="location-icon" />
                                             <span className="location-title">Location Shared</span>
                                         </div>
@@ -2158,8 +2211,8 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
                                     </div>
                                 )}
                                 <span className="message-time">
-            {new Date(message.created_at).toLocaleTimeString()}
-        </span>
+                                    {new Date(message.created_at).toLocaleTimeString()}
+                                </span>
                             </div>
                         ))}
                     </div>
@@ -2198,6 +2251,63 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
                                 className="send-btn"
                             >
                                 {isUploading ? <div className="spinner"></div> : <FaPaperPlane />}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Enlarged Image Modal */}
+            {enlargedImage && (
+                <div className="enlarged-image-modal" onClick={closeEnlargedImage}>
+                    <div className="enlarged-image-content" onClick={(e) => e.stopPropagation()}>
+                        <button className="close-enlarged-image" onClick={closeEnlargedImage}>
+                            <FaTimes />
+                        </button>
+
+                        <div className="zoom-controls">
+                            <button onClick={() => setImageZoom(prev => Math.max(0.5, prev - 0.25))}>
+                                <FaSearchMinus />
+                            </button>
+                            <span>{Math.round(imageZoom * 100)}%</span>
+                            <button onClick={() => setImageZoom(prev => Math.min(3, prev + 0.25))}>
+                                <FaSearchPlus />
+                            </button>
+                            <button onClick={() => {
+                                setImageZoom(1);
+                                setImagePosition({ x: 0, y: 0 });
+                            }}>
+                                Reset
+                            </button>
+                        </div>
+
+                        <div
+                            className={`image-container ${imageZoom > 1 ? 'zoomed' : ''}`}
+                            onWheel={handleImageWheel}
+                            onMouseDown={handleImageMouseDown}
+                            onMouseMove={handleImageMouseMove}
+                            onMouseUp={handleImageMouseUp}
+                            onMouseLeave={handleImageMouseUp}
+                        >
+                            <img
+                                src={enlargedImage}
+                                alt="Enlarged view"
+                                style={{
+                                    transform: `scale(${imageZoom}) translate(${imagePosition.x / imageZoom}px, ${imagePosition.y / imageZoom}px)`,
+                                    cursor: imageZoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in'
+                                }}
+                            />
+                        </div>
+
+                        <div className="image-actions">
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => window.open(enlargedImage, '_blank')}
+                            >
+                                <FaImage /> Open in New Tab
+                            </button>
+                            <button className="btn btn-secondary" onClick={closeEnlargedImage}>
+                                Close
                             </button>
                         </div>
                     </div>
