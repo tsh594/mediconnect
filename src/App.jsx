@@ -2163,12 +2163,19 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
                                 className={`message ${message.user_id === currentUser?.id ? 'own-message' : ''}`}
                             >
                                 <div className="message-user">
-                                    {message.user?.avatar_url ? (
-                                        <img src={message.user.avatar_url} alt={message.user.username} className="message-avatar" />
-                                    ) : (
-                                        <FaUserCircle className="message-avatar-placeholder" />
-                                    )}
-                                    <span className="message-username">{message.user?.username || 'Anonymous'}</span>
+                                    <div className="message-user-avatar">
+                                        {message.user?.avatar_url ? (
+                                            <img src={message.user.avatar_url} alt={message.user.username} className="message-avatar" />
+                                        ) : (
+                                            <FaUserCircle className="message-avatar-placeholder" />
+                                        )}
+                                    </div>
+                                    <div className="message-user-info">
+                                        <span className="message-username">{message.user?.username || 'Anonymous'}</span>
+                                        <span className="message-time">
+                                            {new Date(message.created_at).toLocaleTimeString()}
+                                        </span>
+                                    </div>
                                 </div>
 
                                 {message.image_url && (
@@ -2210,9 +2217,6 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
                                         )}
                                     </div>
                                 )}
-                                <span className="message-time">
-                                    {new Date(message.created_at).toLocaleTimeString()}
-                                </span>
                             </div>
                         ))}
                     </div>

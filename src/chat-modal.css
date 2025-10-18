@@ -198,3 +198,111 @@
     border-radius: 0;
   }
 }
+
+
+
+/* Updated Message User Styles */
+.message-user {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 8px;
+    gap: 10px;
+}
+
+.message-user-avatar {
+    flex-shrink: 0;
+}
+
+.message-user-info {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 32px; /* Match avatar height */
+}
+
+.message-username {
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--primary-color);
+    margin: 0;
+    line-height: 1.2;
+}
+
+.message-time {
+    font-size: 11px;
+    color: #6b7280;
+    margin-top: 2px;
+    line-height: 1;
+}
+
+/* Own message styling */
+.own-message .message-username {
+    color: #1b1616;
+    font-weight: 600;
+}
+
+.own-message .message-time {
+    color: rgba(35, 26, 26, 0.8);
+}
+
+/* Message avatar styles */
+.message-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--primary-color);
+}
+
+.message-avatar-placeholder {
+    width: 32px;
+    height: 32px;
+    color: #9ca3af;
+    border-radius: 50%;
+}
+
+.own-message .message-avatar {
+    border-color: white;
+}
+
+/* Message text styling */
+.message-text {
+    margin: 4px 0 8px 0;
+    padding: 12px 16px;
+    background: #f8fafc;
+    border-radius: 18px;
+    border-top-left-radius: 4px;
+    line-height: 1.4;
+    max-width: 70%;
+    word-wrap: break-word;
+}
+
+.own-message .message-text {
+    background: var(--primary-color);
+    color: white;
+    border-top-left-radius: 18px;
+    border-top-right-radius: 4px;
+    margin-left: auto;
+}
+
+/* Message container alignment */
+.message {
+    margin-bottom: 16px;
+    padding: 8px 16px;
+}
+
+.own-message {
+    text-align: right;
+}
+
+/* Ensure proper spacing for messages with images/locations */
+.message-image-container,
+.message-location-container {
+    margin: 8px 0;
+}
+
+.own-message .message-image-container,
+.own-message .message-location-container {
+    margin-left: auto;
+    margin-right: 0;
+}
