@@ -14,18 +14,29 @@ import { GiKidneys, GiLungs, GiSpiderWeb, GiStomach } from 'react-icons/gi';
 import { MdPsychology, MdEmergency, MdForum } from 'react-icons/md';
 import ReactMarkdown from 'react-markdown';
 import { FaInfoCircle, FaExclamationTriangle } from 'react-icons/fa';
-import {
-    findMatchingDoctors,
-    scheduleConsultation,
-    getSpecialtiesList,
-    testPrecisionMatchService
-} from './services/precisionConsultMatchService';
 import './specialty.css';
 import './index.css';
 
 // Import AI Service
 import { getAIDiagnosis, getMedicalEducation, testAIConnection } from './services/googleGenAIService';
 
+// Import Precision Consult Match Service with Free Maps
+import {
+    findMatchingDoctors,
+    scheduleConsultation,
+    getSpecialtiesList, // Now this exists
+    testPrecisionMatchService
+} from './services/precisionConsultMatchService';
+
+// Import Free Maps Service
+import freeMapsService from './services/freeMapsService';
+
+// Import Map Component
+import MapComponent from './components/MapComponent';
+
+// Import CMS API Service
+import { cmsApiService } from './services/cmsApiService';
+import { CMSApiDebugService } from './services/cmsApiDebugService';
 // Environment test utility
 const testEnvironment = () => {
     console.group('🌍 ENVIRONMENT VARIABLES TEST');
@@ -55,6 +66,7 @@ const testEnvironment = () => {
 };
 
 // SINGLETON: Initialize Supabase client once
+// SINGLETON: Initialize Supabase client once
 let supabaseInstance = null;
 
 const getSupabaseClient = () => {
@@ -74,7 +86,12 @@ const getSupabaseClient = () => {
             return supabaseInstance;
         }
 
-        supabaseInstance = createClient(supabaseUrl, supabaseKey);
+        supabaseInstance = createClient(supabaseUrl, supabaseKey, {
+            auth: {
+                persistSession: true,
+                autoRefreshToken: true,
+            }
+        });
         console.log('✅ Supabase client initialized (singleton)');
         return supabaseInstance;
     } catch (error) {
@@ -83,6 +100,8 @@ const getSupabaseClient = () => {
         return supabaseInstance;
     }
 };
+
+const supabase = getSupabaseClient();
 
 // Mock client for development
 const createMockClient = () => {
@@ -167,7 +186,42 @@ const createMockClient = () => {
     };
 };
 
-const supabase = getSupabaseClient();
+const handleTestCSVData = async () => {
+    console.log('📊 Testing CMS CSV Data Loading...');
+    const result = await cmsApiService.testCSVData();
+
+    if (result.success) {
+        alert(`✅ CMS CSV Test: SUCCESS\nRecords: ${result.totalRecords}\nSample: ${result.sampleRecords[0]?.name} - ${result.sampleRecords[0]?.specialty}`);
+        console.log('CSV Test Details:', result);
+    } else {
+        alert(`❌ CMS CSV Test: FAILED\nError: ${result.error}`);
+    }
+};
+
+const testCSVFileDirectly = async () => {
+    try {
+        console.log('🔍 Testing CSV file directly...');
+        const response = await fetch('/data/cms-doctors-clinicians.csv');
+        const text = await response.text();
+
+        console.log('📄 File Response:', {
+            status: response.status,
+            ok: response.ok,
+            size: text.length,
+            first100Chars: text.substring(0, 100),
+            headers: Object.fromEntries(response.headers.entries())
+        });
+
+        if (text.length === 0) {
+            alert('❌ File is completely empty when fetched via JavaScript');
+        } else {
+            alert(`✅ File loaded successfully!\nSize: ${text.length} chars\nFirst line: ${text.split('\n')[0]?.substring(0, 50)}...`);
+        }
+    } catch (error) {
+        console.error('File test error:', error);
+        alert(`❌ File test failed: ${error.message}`);
+    }
+};
 
 // Default user preferences
 const defaultPreferences = {
@@ -185,86 +239,6 @@ const getCacheBustedUrl = (url) => {
     if (!url) return null;
     const sessionTimestamp = sessionStorage.getItem('avatar_cache_buster') || Date.now();
     return `${url}?t=${sessionTimestamp}`;
-};
-
-// Function to get exact street address from coordinates using OpenStreetMap Nominatim
-const getLocationTextFromCoords = async (latitude, longitude) => {
-    try {
-        // OpenStreetMap Nominatim API - more reliable for reverse geocoding
-        const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`
-        );
-        const data = await response.json();
-
-        console.log('OpenStreetMap Nominatim Response:', data);
-
-        if (data && data.address) {
-            const address = data.address;
-
-            // Build address from most specific to least specific
-            let addressParts = [];
-
-            // Street level
-            if (address.road) {
-                if (address.house_number) {
-                    addressParts.push(`${address.house_number} ${address.road}`);
-                } else {
-                    addressParts.push(address.road);
-                }
-            }
-
-            // City/town level
-            if (address.city) {
-                addressParts.push(address.city);
-            } else if (address.town) {
-                addressParts.push(address.town);
-            } else if (address.village) {
-                addressParts.push(address.village);
-            } else if (address.municipality) {
-                addressParts.push(address.municipality);
-            }
-
-            // State level
-            if (address.state) {
-                addressParts.push(address.state);
-            }
-
-            // Country level (as fallback)
-            if (address.country && addressParts.length === 0) {
-                addressParts.push(address.country);
-            }
-
-            if (addressParts.length > 0) {
-                const fullAddress = addressParts.join(', ');
-                console.log('Full address from OpenStreetMap:', fullAddress);
-                return fullAddress;
-            }
-        }
-
-        // Fallback: Use coordinates if no address found
-        console.log('No address found, using coordinates');
-        return `Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-    } catch (error) {
-        console.error('Error getting location text from OpenStreetMap:', error);
-
-        // Final fallback: Try a simpler approach with just city/state
-        try {
-            const simpleResponse = await fetch(
-                `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
-            );
-            const simpleData = await simpleResponse.json();
-
-            if (simpleData && simpleData.city && simpleData.countryName) {
-                return `${simpleData.city}, ${simpleData.countryName}`;
-            } else if (simpleData && simpleData.locality) {
-                return simpleData.locality;
-            }
-        } catch (fallbackError) {
-            console.error('Fallback geocoding also failed:', fallbackError);
-        }
-
-        return `Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-    }
 };
 
 // AI Diagnostic Component
@@ -359,6 +333,93 @@ const AIDiagnostic = () => {
     );
 };
 
+// CMS API Debug Panel Component
+const CMSDebugPanel = () => {
+    const [debugInfo, setDebugInfo] = useState(null);
+    const [datasets, setDatasets] = useState([]);
+
+    const runCMSDebug = async () => {
+        const debugService = new CMSApiDebugService();
+        const results = await debugService.testCMSConnection();
+        setDebugInfo(results);
+
+        // Also get available datasets
+        const availableDatasets = await debugService.getAvailableDatasets();
+        setDatasets(availableDatasets);
+        console.log('Available datasets:', availableDatasets);
+    };
+
+    return (
+        <div style={{
+            position: 'fixed',
+            top: '50px',
+            left: '10px',
+            background: 'rgba(0,0,0,0.9)',
+            color: 'white',
+            padding: '15px',
+            fontSize: '12px',
+            zIndex: 10000,
+            borderRadius: '8px',
+            maxWidth: '500px',
+            fontFamily: 'monospace'
+        }}>
+            <div style={{ marginBottom: '10px', fontWeight: 'bold' }}>CMS API Debug</div>
+
+            <button
+                onClick={runCMSDebug}
+                style={{
+                    padding: '5px 10px',
+                    marginBottom: '10px',
+                    background: '#4f46e5',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                }}
+            >
+                Test CMS API
+            </button>
+
+            <button onClick={handleTestCSVData} style={{ fontSize: '10px', marginTop: '5px', display: 'block', background: '#f59e0b' }}>
+                Test CMS CSV Data
+            </button>
+
+            <button onClick={testCSVFileDirectly} style={{ fontSize: '10px', marginTop: '5px', display: 'block', background: '#dc2626' }}>
+                Test CSV File Directly
+            </button>
+
+            {debugInfo && (
+                <div style={{ fontSize: '11px', lineHeight: '1.4' }}>
+                    {debugInfo.map((test, index) => (
+                        <div key={index} style={{ marginBottom: '8px', padding: '5px', background: test.ok ? '#10b98120' : '#ef444420' }}>
+                            <div><strong>{test.test}:</strong> {test.ok ? '✅ SUCCESS' : '❌ FAILED'}</div>
+                            {test.status && <div>Status: {test.status}</div>}
+                            {test.error && <div>Error: {test.error}</div>}
+                            <div style={{ fontSize: '10px', color: '#ccc' }}>URL: {test.url}</div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {datasets.length > 0 && (
+                <div style={{ marginTop: '10px', borderTop: '1px solid #444', paddingTop: '10px' }}>
+                    <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>📊 Available Datasets:</div>
+                    {datasets.slice(0, 5).map((ds, index) => (
+                        <div key={index} style={{ fontSize: '10px', marginBottom: '3px' }}>
+                            • {ds.title}
+                        </div>
+                    ))}
+                    {datasets.length > 5 && (
+                        <div style={{ fontSize: '10px', color: '#ccc' }}>
+                            ... and {datasets.length - 5} more
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
 function App() {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isBottom, setIsBottom] = useState(false);
@@ -392,9 +453,33 @@ function App() {
         severity: ''
     });
 
+    // Precision Consult Match states
+    const [showPrecisionMatch, setShowPrecisionMatch] = useState(false);
+    const [doctorMatches, setDoctorMatches] = useState([]);
+    const [matchLoading, setMatchLoading] = useState(false);
+    const [matchCriteria, setMatchCriteria] = useState({
+        symptoms: '',
+        age: '',
+        gender: '',
+        location: '',
+        insurance: '',
+        condition: '',
+        telemedicinePreferred: false,
+        languagePreferences: []
+    });
+
+    // Map states
+    const [showMap, setShowMap] = useState(false);
+    const [mapProviders, setMapProviders] = useState([]);
+    const [mapCenter, setMapCenter] = useState([40.7128, -74.0060]);
+    const [mapLoading, setMapLoading] = useState(false);
+
     // Avatar loading state
     const [avatarLoadError, setAvatarLoadError] = useState(false);
     const [avatarKey, setAvatarKey] = useState(Date.now());
+
+    // CMS Debug state
+    const [showCMSDebug, setShowCMSDebug] = useState(false);
 
     const [isUploading, setIsUploading] = useState(false);
     const [showAuthModal, setShowAuthModal] = useState(false);
@@ -416,9 +501,22 @@ function App() {
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
     const userMenuRef = useRef(null);
 
-    // FIX: Track initialization to prevent multiple setups
+    // Track initialization to prevent multiple setups
     const authInitializedRef = useRef(false);
     const authSubscriptionRef = useRef(null);
+
+    // Initialize Free Maps Service
+    useEffect(() => {
+        const initializeMaps = async () => {
+            try {
+                await freeMapsService.initialize();
+                console.log('🗺️ Free Maps service initialized successfully');
+            } catch (error) {
+                console.error('❌ Failed to initialize maps service:', error);
+            }
+        };
+        initializeMaps();
+    }, []);
 
     // Image enlargement functions
     const handleImageClick = (imageUrl) => {
@@ -462,6 +560,72 @@ function App() {
         setIsDragging(false);
     };
 
+    // Enhanced emergency click handler with Free Maps
+    const handleEmergencyClick = async () => {
+        try {
+            const position = await freeMapsService.getCurrentLocation();
+
+            const reverseGeocodeResult = await freeMapsService.reverseGeocode(
+                position.lat,
+                position.lng
+            );
+
+            const locationText = reverseGeocodeResult.address;
+            const coordinatesText = `Coordinates: ${position.lat.toFixed(6)}, ${position.lng.toFixed(6)}`;
+            const fullLocationText = `${locationText} (${coordinatesText})`;
+
+            const { error } = await supabase
+                .from('messages')
+                .insert([
+                    {
+                        user_id: currentUser.id,
+                        text: `🚨 EMERGENCY ALERT - Need immediate medical assistance! Location: ${fullLocationText}`,
+                        location: {
+                            latitude: position.lat,
+                            longitude: position.lng,
+                            accuracy: position.accuracy,
+                            text: fullLocationText
+                        },
+                        created_at: new Date().toISOString()
+                    }
+                ]);
+
+            if (error) {
+                console.error('Error sending emergency alert:', error);
+                alert(`🚨 Emergency alert sent locally! Exact location: ${fullLocationText}`);
+            } else {
+                alert(`🚨 Emergency alert sent! Exact location: ${fullLocationText}`);
+            }
+        } catch (error) {
+            console.error('Error getting location:', error);
+            alert('Emergency alert sent without location!');
+        }
+    };
+
+    // Show doctors on map
+    const handleShowMap = async (doctors = null) => {
+        setMapLoading(true);
+        try {
+            if (doctors) {
+                setMapProviders(doctors);
+                if (doctors.length > 0 && doctors[0].coordinates) {
+                    setMapCenter([doctors[0].coordinates.lat, doctors[0].coordinates.lng]);
+                }
+            } else if (doctorMatches.length > 0) {
+                setMapProviders(doctorMatches);
+                if (doctorMatches[0].coordinates) {
+                    setMapCenter([doctorMatches[0].coordinates.lat, doctorMatches[0].coordinates.lng]);
+                }
+            }
+            setShowMap(true);
+        } catch (error) {
+            console.error('Error showing map:', error);
+            setAuthError('Unable to load map. Please try again.');
+        } finally {
+            setMapLoading(false);
+        }
+    };
+
     // AI Diagnostic Think Tank Functions
     const handleAISendMessage = async () => {
         if (!aiInput.trim() || isAILoading) return;
@@ -480,20 +644,18 @@ function App() {
         try {
             const result = await getAIDiagnosis(aiInput, patientInfo);
 
-            // Check if the result is successful
             if (result.success) {
                 const aiMessage = {
                     id: uuidv4(),
                     type: 'ai',
                     content: result.response,
-                    success: true, // Make sure this is true
+                    success: true,
                     timestamp: new Date().toISOString(),
                     fallback: result.fallback || false,
                     model: result.model
                 };
                 setAiMessages(prev => [...prev, aiMessage]);
             } else {
-                // Only show error if result.success is false
                 const errorMessage = {
                     id: uuidv4(),
                     type: 'ai',
@@ -543,11 +705,81 @@ function App() {
         });
     };
 
+    // Enhanced Precision Consult Match with Free Maps
+    const handlePrecisionMatch = async () => {
+        if (!matchCriteria.symptoms.trim()) {
+            setAuthError('Please describe your symptoms');
+            return;
+        }
+
+        // Ensure location has a default value
+        const criteriaWithDefaultLocation = {
+            ...matchCriteria,
+            location: matchCriteria.location || 'Fairfax, VA' // Default location
+        };
+
+        setMatchLoading(true);
+        try {
+            const result = await findMatchingDoctors(criteriaWithDefaultLocation, matchCriteria.symptoms);
+
+            if (result.success) {
+                setDoctorMatches(result.matches);
+                setAuthSuccess(`Found ${result.totalMatches} matching doctors!`);
+
+                // Auto-show map if we have matches with coordinates
+                if (result.matches.length > 0) {
+                    setTimeout(() => handleShowMap(result.matches), 500);
+                }
+            } else {
+                setAuthError('Unable to find matches. Please try again.');
+                setDoctorMatches(result.matches || []);
+            }
+        } catch (error) {
+            console.error('Error finding doctors:', error);
+            setAuthError('Error finding doctor matches. Please try again.');
+        } finally {
+            setMatchLoading(false);
+        }
+    };
+
     // Test AI Connection
     const handleTestAIConnection = async () => {
         console.log('🧪 Testing AI Connection...');
         const result = await testAIConnection();
         alert(`AI Test Result: ${result.success ? 'SUCCESS' : 'FAILED'}\n${result.error || result.response}`);
+    };
+
+    // Test Precision Match Service
+    const handleTestPrecisionMatch = async () => {
+        console.log('🧪 Testing Precision Match Service...');
+        const result = await testPrecisionMatchService();
+        alert(`Precision Match Test Result: ${result.success ? 'SUCCESS' : 'FAILED'}\n${result.error || 'Check console for details'}`);
+    };
+
+    // Test Free Maps Service
+    const handleTestMaps = async () => {
+        console.log('🗺️ Testing Free Maps Service...');
+        try {
+            const location = await freeMapsService.geocodeLocation('New York, NY');
+            alert(`Maps Test: SUCCESS\nLocation: ${location.address}\nCoordinates: ${location.lat}, ${location.lng}`);
+        } catch (error) {
+            alert(`Maps Test: FAILED\nError: ${error.message}`);
+        }
+    };
+
+    // Test CMS API Service
+    const handleTestCMS = async () => {
+        console.log('🏥 Testing CMS API Service...');
+        try {
+            const testCriteria = {
+                symptoms: 'sore throat',
+                location: 'Fairfax, VA'
+            };
+            const doctors = await cmsApiService.findRealDoctors(testCriteria, 'sore throat');
+            alert(`CMS API Test: ${doctors.length > 0 ? 'SUCCESS' : 'FALLBACK'}\nFound ${doctors.length} doctors\nUsing: ${doctors[0]?.isReal ? 'Real CMS Data' : 'Enhanced Fallback'}`);
+        } catch (error) {
+            alert(`CMS API Test: FAILED\nError: ${error.message}`);
+        }
     };
 
     // Comprehensive Google AI API Test
@@ -578,7 +810,7 @@ function App() {
                 apiKey: API_KEY,
             });
 
-            const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+            const models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
 
             for (const modelName of models) {
                 try {
@@ -734,9 +966,8 @@ function App() {
         return () => observer.disconnect();
     }, []);
 
-    // FIXED: Single authentication initialization
+    // Single authentication initialization
     useEffect(() => {
-        // Prevent multiple initializations
         if (authInitializedRef.current) {
             console.log('🚫 Auth already initialized, skipping...');
             return;
@@ -864,7 +1095,7 @@ function App() {
         setCurrentUser({ id: userId, anonymous: true });
     };
 
-    // FIXED: User profile fetching
+    // User profile fetching
     const fetchUserProfile = async (userId) => {
         try {
             console.log('🔄 Fetching user profile for:', userId);
@@ -900,7 +1131,7 @@ function App() {
                         authUser?.email?.split('@')[0] ||
                         'user',
                     email: data.email || authUser?.email,
-                    avatar_url: data.avatar_url, // CRITICAL: Use database avatar_url
+                    avatar_url: data.avatar_url,
                     user_metadata: authUser?.user_metadata
                 };
 
@@ -993,50 +1224,133 @@ function App() {
         }
     };
 
-    // Updated emergency click handler to include coordinates in both popup and messages
-    const handleEmergencyClick = async () => {
+    // Enhanced message sending with Free Maps
+    const handleSendMessage = async () => {
+        if (!newMessage.trim() && !selectedImage) return;
+
+        if (!supabaseConfigured) {
+            setAuthError('Chat feature unavailable. Please configure Supabase first.');
+            return;
+        }
+
+        setIsUploading(true);
+        let imageUrl = null;
+
+        if (selectedImage) {
+            try {
+                const fileExt = selectedImage.name.split('.').pop();
+                const fileName = `${uuidv4()}.${fileExt}`;
+                const { error: uploadError } = await supabase.storage
+                    .from('message-images')
+                    .upload(fileName, selectedImage);
+
+                if (uploadError) {
+                    console.error('Error uploading image:', uploadError);
+                    setIsUploading(false);
+                    return;
+                }
+
+                const { data: { publicUrl } } = supabase.storage
+                    .from('message-images')
+                    .getPublicUrl(fileName);
+
+                imageUrl = publicUrl;
+            } catch (error) {
+                console.error('Error in image upload:', error);
+                setIsUploading(false);
+                return;
+            }
+        }
+
+        let location = null;
+        let locationText = 'Location not available';
+
         try {
-            const position = await new Promise((resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(resolve, reject);
-            });
+            const position = await freeMapsService.getCurrentLocation();
+            const reverseGeocodeResult = await freeMapsService.reverseGeocode(
+                position.lat,
+                position.lng
+            );
 
-            const location = {
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude,
-                accuracy: position.coords.accuracy
-            };
-
-            // Get exact street address from coordinates
-            const locationText = await getLocationTextFromCoords(location.latitude, location.longitude);
-
-            // Create message text that includes both address and coordinates
-            const coordinatesText = `Coordinates: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
+            locationText = reverseGeocodeResult.address;
+            const coordinatesText = `Coordinates: ${position.lat.toFixed(6)}, ${position.lng.toFixed(6)}`;
             const fullLocationText = `${locationText} (${coordinatesText})`;
 
+            location = {
+                latitude: position.lat,
+                longitude: position.lng,
+                accuracy: position.accuracy,
+                text: fullLocationText
+            };
+
+        } catch (error) {
+            console.log('Location access not available or denied');
+        }
+
+        try {
             const { error } = await supabase
                 .from('messages')
                 .insert([
                     {
+                        text: newMessage,
+                        image_url: imageUrl,
+                        location: location,
                         user_id: currentUser.id,
-                        text: `🚨 EMERGENCY ALERT - Need immediate medical assistance! Location: ${fullLocationText}`,
-                        location: {
-                            ...location,
-                            text: locationText // Add location text to location object
-                        },
                         created_at: new Date().toISOString()
                     }
                 ]);
 
             if (error) {
-                console.error('Error sending emergency alert:', error);
-                alert(`🚨 Emergency alert sent locally! Exact location: ${fullLocationText}`);
+                console.error('Error sending message:', error);
             } else {
-                alert(`🚨 Emergency alert sent! Exact location: ${fullLocationText}`);
+                setNewMessage('');
+                setSelectedImage(null);
             }
         } catch (error) {
-            console.error('Error getting location:', error);
-            alert('Emergency alert sent without location!');
+            console.error('Error in send message:', error);
         }
+
+        setIsUploading(false);
+    };
+
+    const handleImageSelect = (e) => {
+        const file = e.target.files[0];
+        if (file && file.type.startsWith('image/')) {
+            setSelectedImage(file);
+        }
+    };
+
+    const removeImage = () => {
+        setSelectedImage(null);
+    };
+
+    const handleSavePreferences = async () => {
+        localStorage.setItem('userPreferences', JSON.stringify(tempPreferences));
+        setUserPreferences(tempPreferences);
+
+        if (currentUser && !currentUser.anonymous) {
+            try {
+                const { error } = await supabase
+                    .from('users')
+                    .update({ preferences: tempPreferences })
+                    .eq('id', currentUser.id);
+
+                if (error) {
+                    console.error('Error saving preferences:', error);
+                } else {
+                    setAuthSuccess('Preferences saved successfully!');
+                    setTimeout(() => setAuthSuccess(''), 3000);
+                }
+            } catch (error) {
+                console.error('Error saving preferences:', error);
+            }
+        }
+
+        setShowSettings(false);
+    };
+
+    const handleResetPreferences = () => {
+        setTempPreferences(defaultPreferences);
     };
 
     const handleRating = (author, rating) => {
@@ -1191,139 +1505,6 @@ function App() {
             console.error('Sign out error:', error);
             setAuthError('Error signing out. Please try again.');
         }
-    };
-
-    // Updated send message handler to include coordinates in messages
-    const handleSendMessage = async () => {
-        if (!newMessage.trim() && !selectedImage) return;
-
-        if (!supabaseConfigured) {
-            setAuthError('Chat feature unavailable. Please configure Supabase first.');
-            return;
-        }
-
-        setIsUploading(true);
-        let imageUrl = null;
-
-        if (selectedImage) {
-            try {
-                const fileExt = selectedImage.name.split('.').pop();
-                const fileName = `${uuidv4()}.${fileExt}`;
-                const { error: uploadError } = await supabase.storage
-                    .from('message-images')
-                    .upload(fileName, selectedImage);
-
-                if (uploadError) {
-                    console.error('Error uploading image:', uploadError);
-                    setIsUploading(false);
-                    return;
-                }
-
-                const { data: { publicUrl } } = supabase.storage
-                    .from('message-images')
-                    .getPublicUrl(fileName);
-
-                imageUrl = publicUrl;
-            } catch (error) {
-                console.error('Error in image upload:', error);
-                setIsUploading(false);
-                return;
-            }
-        }
-
-        let location = null;
-        let locationText = 'Location not available';
-
-        try {
-            const position = await new Promise((resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(resolve, reject, {
-                    timeout: 5000,
-                    maximumAge: 60000
-                });
-            });
-
-            location = {
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude
-            };
-
-            // Get exact street address for regular messages too
-            locationText = await getLocationTextFromCoords(location.latitude, location.longitude);
-
-            // Add coordinates to the location text for regular messages
-            const coordinatesText = `Coordinates: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
-            const fullLocationText = `${locationText} (${coordinatesText})`;
-
-            location.text = fullLocationText; // Add full location text to location object
-
-        } catch (error) {
-            console.log('Location access not available or denied');
-        }
-
-        try {
-            const { error } = await supabase
-                .from('messages')
-                .insert([
-                    {
-                        text: newMessage,
-                        image_url: imageUrl,
-                        location: location,
-                        user_id: currentUser.id,
-                        created_at: new Date().toISOString()
-                    }
-                ]);
-
-            if (error) {
-                console.error('Error sending message:', error);
-            } else {
-                setNewMessage('');
-                setSelectedImage(null);
-            }
-        } catch (error) {
-            console.error('Error in send message:', error);
-        }
-
-        setIsUploading(false);
-    };
-
-    const handleImageSelect = (e) => {
-        const file = e.target.files[0];
-        if (file && file.type.startsWith('image/')) {
-            setSelectedImage(file);
-        }
-    };
-
-    const removeImage = () => {
-        setSelectedImage(null);
-    };
-
-    const handleSavePreferences = async () => {
-        localStorage.setItem('userPreferences', JSON.stringify(tempPreferences));
-        setUserPreferences(tempPreferences);
-
-        if (currentUser && !currentUser.anonymous) {
-            try {
-                const { error } = await supabase
-                    .from('users')
-                    .update({ preferences: tempPreferences })
-                    .eq('id', currentUser.id);
-
-                if (error) {
-                    console.error('Error saving preferences:', error);
-                } else {
-                    setAuthSuccess('Preferences saved successfully!');
-                    setTimeout(() => setAuthSuccess(''), 3000);
-                }
-            } catch (error) {
-                console.error('Error saving preferences:', error);
-            }
-        }
-
-        setShowSettings(false);
-    };
-
-    const handleResetPreferences = () => {
-        setTempPreferences(defaultPreferences);
     };
 
     // Avatar upload function
@@ -1564,7 +1745,8 @@ function App() {
                     <h3>{specialty.name}</h3>
                     <p className="specialty-description">{specialty.description}</p>
                     <div className="specialty-cases">
-                        {specialty.cases.map((caseStudy, index) => (
+                        {/* FIX: Add safeguard for cases array */}
+                        {(specialty.cases || []).map((caseStudy, index) => (
                             <span key={index} className="case-tag">{caseStudy}</span>
                         ))}
                     </div>
@@ -1582,6 +1764,9 @@ function App() {
         <div className="app">
             {/* AI Diagnostic Panel */}
             <AIDiagnostic />
+
+            {/* CMS Debug Panel */}
+            {showCMSDebug && <CMSDebugPanel />}
 
             {/* Debug Component */}
             <div style={{
@@ -1603,6 +1788,22 @@ function App() {
                 </button>
                 <button onClick={handleTestAIConnection} style={{ fontSize: '10px', marginTop: '5px', display: 'block' }}>
                     Test AI Connection
+                </button>
+                <button onClick={handleTestPrecisionMatch} style={{ fontSize: '10px', marginTop: '5px', display: 'block' }}>
+                    Test Precision Match
+                </button>
+                <button onClick={handleTestMaps} style={{ fontSize: '10px', marginTop: '5px', display: 'block', background: '#10b981' }}>
+                    Test Free Maps
+                </button>
+                <button onClick={handleTestCMS} style={{ fontSize: '10px', marginTop: '5px', display: 'block', background: '#8b5cf6' }}>
+                    Test CMS API
+                </button>
+                <button onClick={() => setShowCMSDebug(!showCMSDebug)} style={{ fontSize: '10px', marginTop: '5px', display: 'block', background: '#f59e0b' }}>
+                    {showCMSDebug ? 'Hide' : 'Show'} CMS Debug
+                </button>
+
+                <button onClick={handleTestCSVData} style={{ fontSize: '10px', marginTop: '5px', display: 'block', background: '#f59e0b' }}>
+                    Test CMS CSV Data
                 </button>
 
                 {/* New AI Test Buttons */}
@@ -1914,12 +2115,15 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
                             </div>
                         </button>
 
-                        <button className="feature-btn specialist-btn">
+                        <button
+                            className="feature-btn specialist-btn"
+                            onClick={() => setShowPrecisionMatch(true)}
+                        >
                             <div className="btn-content">
                                 <span className="audience-tag">For Patients</span>
                                 <h3 className="btn-title">Precision Consult Match</h3>
                                 <p className="btn-description">
-                                    Algorithm-driven specialist pairing with board-certified professionals
+                                    AI-powered specialist matching with 12 clinical parameters for optimal care
                                 </p>
                                 <span className="btn-action">
                                     <FaSearch className="icon" />
@@ -2006,9 +2210,10 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
                                 </div>
                                 <h3>{specialty.name}</h3>
                                 <div className="learning-resources">
-                                    {specialty.cases.slice(0, 2).map((resource, index) => (
+                                    {/* FIX: Add safeguard for cases array */}
+                                    {(specialty.cases || []).slice(0, 2).map((resource, index) => (
                                         <span key={index} className="resource-tag">
-                                            {resource}
+                                          {resource}
                                         </span>
                                     ))}
                                 </div>
@@ -2048,7 +2253,8 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
                                     <h3>{activeSpecialty.name} Consultation</h3>
                                 </div>
                                 <div className="consultation-info">
-                                    <p><strong>Typical Cases:</strong> {activeSpecialty.cases.slice(0, 3).join(', ')}</p>
+                                    {/* FIXED: Added safeguard for cases array */}
+                                    <p><strong>Typical Cases:</strong> {(activeSpecialty.cases || []).slice(0, 3).join(', ')}</p>
                                     <p><strong>Average Response Time:</strong> 2-4 hours</p>
                                     <p><strong>Consultation Fee:</strong> $120-250</p>
                                 </div>
@@ -2443,6 +2649,351 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
                                     </button>
                                 </p>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Enhanced Precision Consult Match Modal with Map Integration */}
+            {showPrecisionMatch && (
+                <div className="precision-match-modal">
+                    <div className="precision-match-content">
+                        <div className="precision-match-header">
+                            <h2>
+                                <FaSearch className="mr-2" />
+                                Precision Consult Match
+                            </h2>
+                            <button
+                                className="close-precision-match"
+                                onClick={() => {
+                                    setShowPrecisionMatch(false);
+                                    setDoctorMatches([]);
+                                    setMatchCriteria({
+                                        symptoms: '',
+                                        age: '',
+                                        gender: '',
+                                        location: '',
+                                        insurance: '',
+                                        condition: '',
+                                        telemedicinePreferred: false,
+                                        languagePreferences: []
+                                    });
+                                }}
+                            >
+                                <FaTimes />
+                            </button>
+                        </div>
+
+                        <div className="precision-match-body">
+                            {doctorMatches.length === 0 ? (
+                                <div className="match-form">
+                                    <div className="disclaimer">
+                                        <FaInfoCircle />
+                                        <span>AI-powered matching analyzes your symptoms to find the most suitable specialists</span>
+                                    </div>
+
+                                    <div className="form-grid">
+                                        <div className="form-group">
+                                            <label>Primary Symptoms *</label>
+                                            <textarea
+                                                placeholder="Describe your symptoms, duration, severity, and any triggers..."
+                                                value={matchCriteria.symptoms}
+                                                onChange={(e) => setMatchCriteria(prev => ({
+                                                    ...prev,
+                                                    symptoms: e.target.value
+                                                }))}
+                                                rows={3}
+                                            />
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label>Known Condition (if any)</label>
+                                            <input
+                                                type="text"
+                                                placeholder="e.g., Diabetes, Hypertension, Asthma..."
+                                                value={matchCriteria.condition}
+                                                onChange={(e) => setMatchCriteria(prev => ({
+                                                    ...prev,
+                                                    condition: e.target.value
+                                                }))}
+                                            />
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label>Age</label>
+                                            <input
+                                                type="number"
+                                                placeholder="Your age"
+                                                value={matchCriteria.age}
+                                                onChange={(e) => setMatchCriteria(prev => ({
+                                                    ...prev,
+                                                    age: e.target.value
+                                                }))}
+                                            />
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label>Gender</label>
+                                            <select
+                                                value={matchCriteria.gender}
+                                                onChange={(e) => setMatchCriteria(prev => ({
+                                                    ...prev,
+                                                    gender: e.target.value
+                                                }))}
+                                            >
+                                                <option value="">Select</option>
+                                                <option value="male">Male</option>
+                                                <option value="female">Female</option>
+                                                <option value="other">Other</option>
+                                            </select>
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label>Location</label>
+                                            <input
+                                                type="text"
+                                                placeholder="City, State"
+                                                value={matchCriteria.location}
+                                                onChange={(e) => setMatchCriteria(prev => ({
+                                                    ...prev,
+                                                    location: e.target.value
+                                                }))}
+                                            />
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label>Insurance Provider</label>
+                                            <input
+                                                type="text"
+                                                placeholder="e.g., Blue Cross, Aetna..."
+                                                value={matchCriteria.insurance}
+                                                onChange={(e) => setMatchCriteria(prev => ({
+                                                    ...prev,
+                                                    insurance: e.target.value
+                                                }))}
+                                            />
+                                        </div>
+
+                                        <div className="form-group full-width">
+                                            <label className="checkbox-label">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={matchCriteria.telemedicinePreferred}
+                                                    onChange={(e) => setMatchCriteria(prev => ({
+                                                        ...prev,
+                                                        telemedicinePreferred: e.target.checked
+                                                    }))}
+                                                />
+                                                <span>Prefer telemedicine consultation</span>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        className="btn btn-lavender find-doctors-btn"
+                                        onClick={handlePrecisionMatch}
+                                        disabled={matchLoading || !matchCriteria.symptoms.trim()}
+                                    >
+                                        {matchLoading ? (
+                                            <>
+                                                <FaSpinner className="spinner" />
+                                                Finding Best Matches...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <FaSearch className="mr-2" />
+                                                Find Matching Doctors
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="match-results">
+                                    <div className="results-header">
+                                        <h3>Top Doctor Matches</h3>
+                                        <p className="results-subtitle">
+                                            Found {doctorMatches.length} specialists based on your symptoms
+                                        </p>
+                                        <button
+                                            className="btn btn-sage show-map-btn"
+                                            onClick={() => handleShowMap()}
+                                            disabled={mapLoading}
+                                        >
+                                            <FaMapMarkerAlt className="mr-2" />
+                                            {mapLoading ? 'Loading Map...' : 'View on Map'}
+                                        </button>
+                                    </div>
+
+                                    <div className="doctors-grid">
+                                        {doctorMatches.map((doctor, index) => (
+                                            <div key={doctor.id} className="doctor-card">
+                                                <div className="doctor-header">
+                                                    <div className="doctor-image">
+                                                        <img
+                                                            src={`https://randomuser.me/api/portraits/${doctor.gender === 'female' ? 'women' : 'men'}/${doctor.id}.jpg`}
+                                                            alt={doctor.name}
+                                                            onError={(e) => {
+                                                                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(doctor.name)}&background=4f46e5&color=fff`;
+                                                            }}
+                                                        />
+                                                        <div className="match-badge">
+                                                            {doctor.matchPercentage}% Match
+                                                        </div>
+                                                    </div>
+                                                    <div className="doctor-info">
+                                                        <h4>{doctor.name}</h4>
+                                                        <p className="specialty">{doctor.specialty}</p>
+                                                        <p className="subspecialty">{doctor.subSpecialty}</p>
+                                                        <div className="rating">
+                                                            <FaStar className="star" />
+                                                            <span>{doctor.rating}</span>
+                                                            <span className="reviews">({doctor.experience * 10}+ reviews)</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="doctor-details">
+                                                    <div className="detail-item">
+                                                        <FaMapMarkerAlt />
+                                                        <span>{doctor.hospital}, {doctor.location}</span>
+                                                    </div>
+                                                    {doctor.distance && (
+                                                        <div className="detail-item">
+                                                            <FaMapMarkerAlt />
+                                                            <span>{doctor.distance.text} away • {doctor.travelTime?.text} travel</span>
+                                                        </div>
+                                                    )}
+                                                    <div className="detail-item">
+                                                        <FaStethoscope />
+                                                        <span>{doctor.experience} years experience</span>
+                                                    </div>
+                                                    <div className="detail-item">
+                                                        <FaComments />
+                                                        <span>{(doctor.languages || ['English']).join(', ')}</span>
+                                                    </div>
+                                                    <div className="detail-item">
+                                                        <FaUserMd />
+                                                        <span>Available: {doctor.availability}</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="conditions">
+                                                    <strong>Specializes in:</strong>
+                                                    <div className="condition-tags">
+                                                        {/* FIXED: Added safeguard for conditions array */}
+                                                        {(doctor.conditions || []).slice(0, 3).map(condition => (
+                                                            <span key={condition} className="condition-tag">
+              {condition}
+            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                <div className="doctor-actions">
+                                                    <div className="fee">
+                                                        Consultation: ${doctor.consultationFee}
+                                                    </div>
+                                                    <button className="btn btn-sage">
+                                                        Book Consultation
+                                                    </button>
+                                                </div>
+
+                                                {doctor.scoringFactors && (
+                                                    <div className="match-reasons">
+                                                        <details>
+                                                            <summary>Why this match?</summary>
+                                                            <ul>
+                                                                {doctor.scoringFactors.map((factor, i) => (
+                                                                    <li key={i}>{factor}</li>
+                                                                ))}
+                                                            </ul>
+                                                        </details>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <div className="results-actions">
+                                        <button
+                                            className="btn btn-secondary"
+                                            onClick={() => setDoctorMatches([])}
+                                        >
+                                            New Search
+                                        </button>
+                                        <button
+                                            className="btn btn-sage"
+                                            onClick={() => handleShowMap()}
+                                        >
+                                            <FaMapMarkerAlt className="mr-2" />
+                                            View Map
+                                        </button>
+                                        <button
+                                            className="btn btn-lavender"
+                                            onClick={() => {
+                                                setShowPrecisionMatch(false);
+                                                setDoctorMatches([]);
+                                            }}
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Interactive Map Modal */}
+            {showMap && (
+                <div className="map-modal">
+                    <div className="map-modal-content">
+                        <div className="map-header">
+                            <h3>
+                                <FaMapMarkerAlt className="mr-2" />
+                                Healthcare Providers Near You
+                            </h3>
+                            <button
+                                className="close-map"
+                                onClick={() => setShowMap(false)}
+                            >
+                                <FaTimes />
+                            </button>
+                        </div>
+                        <div className="map-container">
+                            <MapComponent
+                                providers={mapProviders}
+                                center={mapCenter}
+                                height="500px"
+                            />
+                        </div>
+                        <div className="map-legend">
+                            <div className="legend-item">
+                                <div className="legend-color doctor-marker"></div>
+                                <span>Healthcare Providers</span>
+                            </div>
+                            <div className="legend-item">
+                                <div className="legend-color user-location"></div>
+                                <span>Your Location</span>
+                            </div>
+                        </div>
+                        <div className="map-actions">
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => setShowMap(false)}
+                            >
+                                Close Map
+                            </button>
+                            <button
+                                className="btn btn-lavender"
+                                onClick={() => {
+                                    setShowMap(false);
+                                    setShowPrecisionMatch(true);
+                                }}
+                            >
+                                Back to Results
+                            </button>
                         </div>
                     </div>
                 </div>
