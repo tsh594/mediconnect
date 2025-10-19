@@ -7,13 +7,52 @@ import {
     FaEye, FaAllergies, FaSyringe, FaSearch, FaBookOpen, FaComments, FaStar,
     FaChevronDown, FaChevronUp, FaPaperPlane, FaImage, FaTimes, FaUser, FaEnvelope,
     FaLock, FaMapMarkerAlt, FaSignInAlt, FaSignOutAlt, FaUserCircle, FaCog,
-    FaPalette, FaFont, FaSave, FaUndo, FaSearchPlus, FaSearchMinus
+    FaPalette, FaFont, FaSave, FaUndo, FaSearchPlus, FaSearchMinus, FaRobot, FaSpinner
 } from 'react-icons/fa';
 import { FaCut, FaUserAlt, FaRegUser, FaHeadSideCough } from 'react-icons/fa';
 import { GiKidneys, GiLungs, GiSpiderWeb, GiStomach } from 'react-icons/gi';
 import { MdPsychology, MdEmergency, MdForum } from 'react-icons/md';
+import ReactMarkdown from 'react-markdown';
+import { FaInfoCircle, FaExclamationTriangle } from 'react-icons/fa';
+import {
+    findMatchingDoctors,
+    scheduleConsultation,
+    getSpecialtiesList,
+    testPrecisionMatchService
+} from './services/precisionConsultMatchService';
 import './specialty.css';
 import './index.css';
+
+// Import AI Service
+import { getAIDiagnosis, getMedicalEducation, testAIConnection } from './services/googleGenAIService';
+
+// Environment test utility
+const testEnvironment = () => {
+    console.group('🌍 ENVIRONMENT VARIABLES TEST');
+
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+    console.log('VITE_GEMINI_API_KEY:', apiKey ? `✅ Set (${apiKey.length} chars)` : '❌ Missing');
+    console.log('VITE_SUPABASE_URL:', supabaseUrl ? '✅ Set' : '❌ Missing');
+    console.log('VITE_SUPABASE_ANON_KEY:', supabaseKey ? '✅ Set' : '❌ Missing');
+
+    if (apiKey) {
+        console.log('API Key preview:', apiKey.substring(0, 8) + '...');
+        console.log('Starts with AIza:', apiKey.startsWith('AIza'));
+        console.log('Contains "your":', apiKey.includes('your-api-key'));
+    }
+
+    console.groupEnd();
+
+    return {
+        geminiApiKey: !!apiKey,
+        supabaseUrl: !!supabaseUrl,
+        supabaseKey: !!supabaseKey,
+        apiKeyValid: apiKey && apiKey.startsWith('AIza') && !apiKey.includes('your-api-key')
+    };
+};
 
 // SINGLETON: Initialize Supabase client once
 let supabaseInstance = null;
@@ -228,6 +267,98 @@ const getLocationTextFromCoords = async (latitude, longitude) => {
     }
 };
 
+// AI Diagnostic Component
+const AIDiagnostic = () => {
+    const [diagnosticInfo, setDiagnosticInfo] = useState(null);
+
+    const runDiagnostics = async () => {
+        console.log('🔍 Running AI Diagnostics...');
+
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        const diagnostics = {
+            envVarExists: !!apiKey,
+            envVarLength: apiKey ? apiKey.length : 0,
+            envVarPreview: apiKey ? `${apiKey.substring(0, 10)}...` : 'None',
+            isMockKey: apiKey ? apiKey.includes('your-api-key') : true,
+            timestamp: new Date().toISOString()
+        };
+
+        console.log('📋 Diagnostic Info:', diagnostics);
+        setDiagnosticInfo(diagnostics);
+
+        // Test the AI service directly
+        try {
+            const testResult = await getAIDiagnosis('test headache');
+            console.log('🧪 AI Service Test Result:', testResult);
+
+            setDiagnosticInfo(prev => ({
+                ...prev,
+                aiTestResult: testResult.success ? 'SUCCESS' : 'FAILED',
+                aiError: testResult.error,
+                aiFallback: testResult.fallback
+            }));
+        } catch (error) {
+            console.error('💥 AI Test Error:', error);
+            setDiagnosticInfo(prev => ({
+                ...prev,
+                aiTestResult: 'ERROR',
+                aiError: error.message
+            }));
+        }
+    };
+
+    return (
+        <div style={{
+            position: 'fixed',
+            top: '10px',
+            left: '10px',
+            background: 'rgba(0,0,0,0.9)',
+            color: 'white',
+            padding: '15px',
+            fontSize: '12px',
+            zIndex: 10000,
+            borderRadius: '8px',
+            maxWidth: '400px',
+            fontFamily: 'monospace'
+        }}>
+            <div style={{ marginBottom: '10px', fontWeight: 'bold' }}>AI Diagnostic Panel</div>
+
+            <button
+                onClick={runDiagnostics}
+                style={{
+                    padding: '5px 10px',
+                    marginBottom: '10px',
+                    background: '#4f46e5',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                }}
+            >
+                Run Diagnostics
+            </button>
+
+            {diagnosticInfo && (
+                <div style={{ fontSize: '11px', lineHeight: '1.4' }}>
+                    <div>✅ Env Var: {diagnosticInfo.envVarExists ? 'EXISTS' : 'MISSING'}</div>
+                    <div>📏 Length: {diagnosticInfo.envVarLength} chars</div>
+                    <div>🔑 Preview: {diagnosticInfo.envVarPreview}</div>
+                    <div>🤖 Mock Key: {diagnosticInfo.isMockKey ? 'YES' : 'NO'}</div>
+                    {diagnosticInfo.aiTestResult && (
+                        <>
+                            <div>🧪 AI Test: {diagnosticInfo.aiTestResult}</div>
+                            {diagnosticInfo.aiError && (
+                                <div>❌ Error: {diagnosticInfo.aiError}</div>
+                            )}
+                            <div>🔄 Fallback: {diagnosticInfo.aiFallback ? 'ACTIVE' : 'INACTIVE'}</div>
+                        </>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
 function App() {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isBottom, setIsBottom] = useState(false);
@@ -247,6 +378,19 @@ function App() {
     const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+    // AI Diagnostic Think Tank states
+    const [showAIChat, setShowAIChat] = useState(false);
+    const [aiMessages, setAiMessages] = useState([]);
+    const [aiInput, setAiInput] = useState('');
+    const [isAILoading, setIsAILoading] = useState(false);
+    const [patientInfo, setPatientInfo] = useState({
+        age: '',
+        gender: '',
+        medicalHistory: '',
+        duration: '',
+        severity: ''
+    });
 
     // Avatar loading state
     const [avatarLoadError, setAvatarLoadError] = useState(false);
@@ -316,6 +460,155 @@ function App() {
 
     const handleImageMouseUp = () => {
         setIsDragging(false);
+    };
+
+    // AI Diagnostic Think Tank Functions
+    const handleAISendMessage = async () => {
+        if (!aiInput.trim() || isAILoading) return;
+
+        const userMessage = {
+            id: uuidv4(),
+            type: 'user',
+            content: aiInput,
+            timestamp: new Date().toISOString()
+        };
+
+        setAiMessages(prev => [...prev, userMessage]);
+        setAiInput('');
+        setIsAILoading(true);
+
+        try {
+            const result = await getAIDiagnosis(aiInput, patientInfo);
+
+            // Check if the result is successful
+            if (result.success) {
+                const aiMessage = {
+                    id: uuidv4(),
+                    type: 'ai',
+                    content: result.response,
+                    success: true, // Make sure this is true
+                    timestamp: new Date().toISOString(),
+                    fallback: result.fallback || false,
+                    model: result.model
+                };
+                setAiMessages(prev => [...prev, aiMessage]);
+            } else {
+                // Only show error if result.success is false
+                const errorMessage = {
+                    id: uuidv4(),
+                    type: 'ai',
+                    content: 'Sorry, I encountered an error. Please try again.',
+                    success: false,
+                    timestamp: new Date().toISOString(),
+                    fallback: true
+                };
+                setAiMessages(prev => [...prev, errorMessage]);
+            }
+        } catch (error) {
+            console.error('AI Service Error:', error);
+            const errorMessage = {
+                id: uuidv4(),
+                type: 'ai',
+                content: 'Sorry, I encountered an error. Please try again.',
+                success: false,
+                timestamp: new Date().toISOString(),
+                fallback: true
+            };
+            setAiMessages(prev => [...prev, errorMessage]);
+        } finally {
+            setIsAILoading(false);
+        }
+    };
+
+    const clearAIChat = () => {
+        setAiMessages([]);
+        setPatientInfo({
+            age: '',
+            gender: '',
+            medicalHistory: '',
+            duration: '',
+            severity: ''
+        });
+    };
+
+    const loadSampleCase = () => {
+        const sampleMessage = "45-year-old male presents with acute chest pain radiating to left arm, diaphoresis, and shortness of breath for 2 hours. History of hypertension and smoking.";
+        setAiInput(sampleMessage);
+        setPatientInfo({
+            age: '45',
+            gender: 'male',
+            medicalHistory: 'Hypertension, smoking',
+            duration: '2 hours',
+            severity: 'acute'
+        });
+    };
+
+    // Test AI Connection
+    const handleTestAIConnection = async () => {
+        console.log('🧪 Testing AI Connection...');
+        const result = await testAIConnection();
+        alert(`AI Test Result: ${result.success ? 'SUCCESS' : 'FAILED'}\n${result.error || result.response}`);
+    };
+
+    // Comprehensive Google AI API Test
+    const testGoogleAIComplete = async () => {
+        console.clear();
+        console.log('🔬 TESTING NEW GOOGLE GENAI SDK');
+
+        const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+
+        // Test 1: Basic API key validation
+        console.log('\n1. 🔑 API KEY VALIDATION:');
+        console.log('   - Exists:', !!API_KEY);
+        console.log('   - Length:', API_KEY?.length || 0);
+        console.log('   - Format:', API_KEY?.startsWith('AIza') ? 'Valid' : 'Invalid');
+        console.log('   - Preview:', API_KEY ? `${API_KEY.substring(0, 10)}...` : 'None');
+
+        if (!API_KEY || !API_KEY.startsWith('AIza')) {
+            alert('❌ API Key Issue');
+            return;
+        }
+
+        // Test 2: Test with new Google GenAI SDK
+        console.log('\n2. 🌐 GOOGLE GENAI SDK TESTING:');
+
+        try {
+            const { GoogleGenAI } = await import('@google/genai');
+            const ai = new GoogleGenAI({
+                apiKey: API_KEY,
+            });
+
+            const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+
+            for (const modelName of models) {
+                try {
+                    console.log(`   Testing: ${modelName}...`);
+
+                    const response = await ai.models.generateContent({
+                        model: modelName,
+                        contents: "Respond with 'SUCCESS' if working.",
+                    });
+
+                    console.log(`   ✅ ${modelName}: WORKS! Response: "${response.text}"`);
+                    alert(`🎉 GOOGLE GENAI SDK SUCCESS!\n\nModel: ${modelName}\nResponse: ${response.text}\n\nYour AI service is working!`);
+                    return;
+
+                } catch (error) {
+                    console.log(`   ❌ ${modelName}: Failed - ${error.message}`);
+                }
+            }
+
+            alert('❌ All models failed with Google GenAI SDK');
+        } catch (error) {
+            console.error('💥 Google GenAI SDK initialization failed:', error);
+            alert('❌ Google GenAI SDK failed to load');
+        }
+    };
+
+    // Environment check function
+    const checkEnvironment = () => {
+        const envStatus = testEnvironment();
+        alert(`Environment Status:\n\nGemini API: ${envStatus.geminiApiKey ? '✅ Set' : '❌ Missing'}\nSupabase URL: ${envStatus.supabaseUrl ? '✅ Set' : '❌ Missing'}\nSupabase Key: ${envStatus.supabaseKey ? '✅ Set' : '❌ Missing'}\nAPI Key Valid: ${envStatus.apiKeyValid ? '✅ Yes' : '❌ No'}`);
     };
 
     // Initialize cache buster
@@ -1285,13 +1578,15 @@ function App() {
         );
     };
 
-    // Your JSX remains exactly the same...
     return (
         <div className="app">
+            {/* AI Diagnostic Panel */}
+            <AIDiagnostic />
+
             {/* Debug Component */}
             <div style={{
                 position: 'fixed',
-                bottom: '800px',
+                bottom: '500px',
                 right: '10px',
                 background: 'rgba(0,0,0,0.8)',
                 color: 'white',
@@ -1306,6 +1601,20 @@ function App() {
                 <button onClick={refreshUserData} style={{ fontSize: '10px', marginTop: '5px' }}>
                     Refresh
                 </button>
+                <button onClick={handleTestAIConnection} style={{ fontSize: '10px', marginTop: '5px', display: 'block' }}>
+                    Test AI Connection
+                </button>
+
+                {/* New AI Test Buttons */}
+                <div style={{ marginTop: '10px', borderTop: '1px solid #444', paddingTop: '10px' }}>
+                    <div style={{ fontSize: '10px', marginBottom: '5px', fontWeight: 'bold' }}>AI Tests:</div>
+                    <button onClick={testGoogleAIComplete} style={{ fontSize: '10px', marginBottom: '3px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', padding: '5px', cursor: 'pointer', width: '100%' }}>
+                        Test Google AI API
+                    </button>
+                    <button onClick={checkEnvironment} style={{ fontSize: '10px', background: '#8b5cf6', color: 'white', border: 'none', borderRadius: '4px', padding: '5px', cursor: 'pointer', width: '100%' }}>
+                        Check Environment
+                    </button>
+                </div>
             </div>
 
             {/* Configuration Warning Banner */}
@@ -1635,16 +1944,20 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
                             </div>
                         </button>
 
-                        <button className="feature-btn discussion-btn">
+                        {/* Updated Diagnostic Think Tank Button with AI */}
+                        <button
+                            className="feature-btn discussion-btn"
+                            onClick={() => setShowAIChat(true)}
+                        >
                             <div className="btn-content">
                                 <span className="audience-tag">For Doctors</span>
                                 <h3 className="btn-title">Diagnostic Think Tank</h3>
                                 <p className="btn-description">
-                                    Crowd-sourced differential diagnoses with AI-powered pattern recognition
+                                    AI-powered differential diagnoses with evidence-based insights
                                 </p>
                                 <span className="btn-action-c">
-                                    <MdForum className="icon" />
-                                    Join Discussions
+                                    <FaRobot className="icon" />
+                                    AI Consult
                                 </span>
                             </div>
                         </button>
@@ -2139,6 +2452,8 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
             <button
                 className="chat-toggle-btn"
                 onClick={() => setShowChat(!showChat)}
+                title="Open community chat"
+                aria-label="Open community chat"
             >
                 <FaComments />
                 {messages.length > 0 && <span className="message-indicator"></span>}
@@ -2256,6 +2571,235 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here`}
                             >
                                 {isUploading ? <div className="spinner"></div> : <FaPaperPlane />}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* AI Diagnostic Think Tank Modal */}
+            {showAIChat && (
+                <div className="ai-chat-modal">
+                    <div className="ai-chat-content">
+                        <div className="ai-chat-header">
+                            <div className="ai-chat-title">
+                                <FaRobot className="ai-icon" />
+                                <h3>Diagnostic Think Tank</h3>
+                                <span className="ai-badge">AI-Powered Medical Assistant</span>
+                            </div>
+                            <button
+                                className="close-ai-chat"
+                                onClick={() => setShowAIChat(false)}
+                            >
+                                <FaTimes />
+                            </button>
+                        </div>
+
+                        <div className="ai-disclaimer">
+                            <strong>Medical AI Assistant</strong> - For educational and discussion purposes only.
+                            Always verify through proper medical channels. Not for direct patient care.
+                        </div>
+
+                        <div className="ai-chat-main">
+                            {/* Patient Info Sidebar */}
+                            <div className="patient-info-section">
+                                <h4>Patient Information</h4>
+                                <div className="patient-info-grid">
+                                    <div className="info-group">
+                                        <label>Age</label>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g., 45"
+                                            value={patientInfo.age}
+                                            onChange={(e) => setPatientInfo(prev => ({...prev, age: e.target.value}))}
+                                        />
+                                    </div>
+                                    <div className="info-group">
+                                        <label>Gender</label>
+                                        <select
+                                            value={patientInfo.gender}
+                                            onChange={(e) => setPatientInfo(prev => ({...prev, gender: e.target.value}))}
+                                        >
+                                            <option value="">Select</option>
+                                            <option value="male">Male</option>
+                                            <option value="female">Female</option>
+                                            <option value="other">Other</option>
+                                        </select>
+                                    </div>
+                                    <div className="info-group">
+                                        <label>Duration</label>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g., 2 days"
+                                            value={patientInfo.duration}
+                                            onChange={(e) => setPatientInfo(prev => ({...prev, duration: e.target.value}))}
+                                        />
+                                    </div>
+                                    <div className="info-group">
+                                        <label>Severity</label>
+                                        <select
+                                            value={patientInfo.severity}
+                                            onChange={(e) => setPatientInfo(prev => ({...prev, severity: e.target.value}))}
+                                        >
+                                            <option value="">Select</option>
+                                            <option value="mild">Mild</option>
+                                            <option value="moderate">Moderate</option>
+                                            <option value="severe">Severe</option>
+                                            <option value="acute">Acute</option>
+                                        </select>
+                                    </div>
+                                    <div className="info-group full-width">
+                                        <label>Medical History</label>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g., Hypertension, Diabetes, Smoking"
+                                            value={patientInfo.medicalHistory}
+                                            onChange={(e) => setPatientInfo(prev => ({...prev, medicalHistory: e.target.value}))}
+                                        />
+                                    </div>
+                                </div>
+                                <button className="btn btn-sm btn-sage" onClick={loadSampleCase}>
+                                    Load Sample Case
+                                </button>
+                            </div>
+
+                            {/* Main Messages Area */}
+                            <div className="ai-messages-container">
+                                {aiMessages.length === 0 ? (
+                                    <div className="ai-welcome-message">
+                                        <FaRobot className="welcome-icon" />
+                                        <h4>Welcome to Diagnostic Think Tank</h4>
+                                        <p>Describe the clinical presentation, symptoms, or case you'd like to discuss. I'll help with differential diagnoses and diagnostic considerations.</p>
+                                        <div className="example-prompts">
+                                            <strong>Try these examples:</strong>
+                                            <ul>
+                                                <li>"45yo male with chest pain and diaphoresis"</li>
+                                                <li>"Headache with photophobia and neck stiffness"</li>
+                                                <li>"Abdominal pain in right lower quadrant"</li>
+                                                <li>"Fever with productive cough for 3 days"</li>
+                                                <li>"Acute onset of neurological deficits"</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    aiMessages.map((message) => (
+                                        <div
+                                            key={message.id}
+                                            className={`ai-message ${message.type === 'user' ? 'user-message' : 'ai-response'} ${!message.success ? 'error-message' : ''}`}
+                                        >
+                                            <div className="ai-message-header">
+                                                {message.type === 'user' ? (
+                                                    <FaUser className="message-icon" />
+                                                ) : (
+                                                    <FaRobot className="message-icon" />
+                                                )}
+                                                <span className="message-sender">
+                                                    {message.type === 'user' ? 'You' : 'AI Assistant'}
+                                                </span>
+                                                <span className="message-time">
+                                                    {new Date(message.timestamp).toLocaleTimeString()}
+                                                </span>
+                                            </div>
+                                            <div className="ai-message-content">
+                                                {message.type === 'user' ? (
+                                                    <div className="user-text">{message.content}</div>
+                                                ) : (
+                                                    <div className="medical-response">
+                                                        <ReactMarkdown
+                                                            components={{
+                                                                // Simple fix for list items
+                                                                li: ({ children, ...props }) => (
+                                                                    <li style={{
+                                                                        display: 'list-item',
+                                                                        marginBottom: '0.75rem',
+                                                                        lineHeight: '1.6',
+                                                                        listStylePosition: 'outside',
+                                                                        paddingLeft: '0.5rem'
+                                                                    }} {...props}>
+                                                                        {children}
+                                                                    </li>
+                                                                ),
+                                                                ul: ({ children, ...props }) => (
+                                                                    <ul style={{
+                                                                        marginBottom: '1.25rem',
+                                                                        paddingLeft: '2rem',
+                                                                        listStyleType: 'disc',
+                                                                        listStylePosition: 'outside'
+                                                                    }} {...props}>
+                                                                        {children}
+                                                                    </ul>
+                                                                ),
+                                                                ol: ({ children, ...props }) => (
+                                                                    <ol style={{
+                                                                        marginBottom: '1.25rem',
+                                                                        paddingLeft: '2rem',
+                                                                        listStyleType: 'decimal',
+                                                                        listStylePosition: 'outside'
+                                                                    }} {...props}>
+                                                                        {children}
+                                                                    </ol>
+                                                                )
+                                                            }}
+                                                        >
+                                                            {message.content}
+                                                        </ReactMarkdown>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {/* Only show fallback notice for AI messages that are fallbacks */}
+                                            {message.type === 'ai' && message.fallback && (
+                                                <div className="fallback-notice">
+                                                    <FaInfoCircle /> Note: AI service using educational fallback. This is a simulated response.
+                                                </div>
+                                            )}
+                                            {/* Only show error notice for AI messages that failed */}
+                                            {message.type === 'ai' && !message.success && (
+                                                <div className="error-notice">
+                                                    <FaExclamationTriangle /> Error: AI service unavailable. Please try again.
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                                {isAILoading && (
+                                    <div className="ai-message ai-response loading-message">
+                                        <div className="ai-message-header">
+                                            <FaRobot className="message-icon" />
+                                            <span className="message-sender">AI Assistant</span>
+                                            <FaSpinner className="spinner" />
+                                        </div>
+                                        <div className="ai-message-content">
+                                            Analyzing case and generating differential diagnoses...
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Input Area */}
+                        <div className="ai-input-container">
+                            <div className="input-group">
+                                <input
+                                    type="text"
+                                    placeholder="Describe symptoms, clinical presentation, or ask a diagnostic question..."
+                                    value={aiInput}
+                                    onChange={(e) => setAiInput(e.target.value)}
+                                    onKeyPress={(e) => e.key === 'Enter' && handleAISendMessage()}
+                                    disabled={isAILoading}
+                                />
+                                <button
+                                    onClick={handleAISendMessage}
+                                    disabled={!aiInput.trim() || isAILoading}
+                                    className="ai-send-btn"
+                                >
+                                    {isAILoading ? <FaSpinner className="spinner" /> : 'Ask AI'}
+                                </button>
+                            </div>
+                            <div className="ai-chat-actions">
+                                <button className="btn btn-secondary" onClick={clearAIChat}>
+                                    Clear Chat
+                                </button>
+                                <small>AI responses are for discussion purposes only</small>
+                            </div>
                         </div>
                     </div>
                 </div>
